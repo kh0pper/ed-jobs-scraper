@@ -17,6 +17,9 @@ import uuid
 from app.config import get_settings
 from app.models.base import SyncSessionLocal
 from app.models.organization import Organization
+from app.models.scrape_source import ScrapeSource  # noqa: F401 — needed for relationship resolution
+from app.models.job_posting import JobPosting  # noqa: F401
+from app.models.scrape_run import ScrapeRun  # noqa: F401
 
 settings = get_settings()
 
@@ -64,6 +67,11 @@ def seed():
     try:
         created = 0
         skipped = 0
+        used_slugs = set()  # Track slugs assigned in this batch
+
+        # Pre-load existing slugs from DB
+        existing_slugs = {row[0] for row in db.query(Organization.slug).all()}
+        used_slugs.update(existing_slugs)
 
         for row in rows:
             tea_id = row["tea_id"]
@@ -76,12 +84,13 @@ def seed():
 
             slug = make_slug(row["name"])
 
-            # Handle slug collisions
+            # Handle slug collisions (check both DB and in-flight batch)
             base_slug = slug
             counter = 2
-            while db.query(Organization).filter(Organization.slug == slug).first():
+            while slug in used_slugs:
                 slug = f"{base_slug}-{counter}"
                 counter += 1
+            used_slugs.add(slug)
 
             org = Organization(
                 id=uuid.uuid4(),

@@ -14,6 +14,8 @@ from app.config import get_settings
 from app.models.base import SyncSessionLocal
 from app.models.organization import Organization
 from app.models.scrape_source import ScrapeSource
+from app.models.job_posting import JobPosting  # noqa: F401 — needed for relationship resolution
+from app.models.scrape_run import ScrapeRun  # noqa: F401
 
 settings = get_settings()
 
@@ -27,7 +29,7 @@ KNOWN_DISTRICT_SOURCES = [
         "slug": "houstonisd",
     },
     {
-        "tea_id": "101917",  # Humble ISD
+        "tea_id": "101913",  # Humble ISD
         "platform": "applitrack",
         "base_url": "https://www.applitrack.com/humbleisd/onlineapp/default.aspx?all=1",
         "slug": "humbleisd",

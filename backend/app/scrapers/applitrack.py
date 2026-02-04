@@ -1,14 +1,14 @@
 """Applitrack/Frontline scraper.
 
 Handles all districts using the Applitrack platform.
-URL pattern: https://www.applitrack.com/{slug}/onlineapp/default.aspx?all=1
-
-The page loads a table with id="listy" containing job listings.
-Columns: Title | Location | Date Posted
+The main data endpoint is: /jobpostings/Output.asp?all=1
+Each job appears as a table with class='title' containing:
+  - Cell 1: Job title (text)
+  - Cell 2: "JobID: XXXXX"
 """
 
 import logging
-from datetime import datetime
+import re
 
 import httpx
 from bs4 import BeautifulSoup
@@ -25,12 +25,11 @@ APPLITRACK_BASE = "https://www.applitrack.com"
 class ApplitrackScraper(BaseScraper):
 
     def scrape(self) -> list[dict]:
-        url = self.source.base_url
-        if not url:
-            slug = self.source.slug
-            url = f"{APPLITRACK_BASE}/{slug}/onlineapp/default.aspx?all=1"
+        slug = self.source.slug
+        # The Output.asp endpoint returns all jobs in one page
+        url = f"{APPLITRACK_BASE}/{slug}/onlineapp/jobpostings/Output.asp?all=1"
 
-        logger.info(f"Fetching Applitrack page: {url}")
+        logger.info(f"Fetching Applitrack Output.asp: {url}")
 
         response = httpx.get(
             url,
@@ -43,67 +42,62 @@ class ApplitrackScraper(BaseScraper):
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
-        job_table = soup.find("table", id="listy")
-
-        if not job_table:
-            logger.warning(f"No job table found at {url}")
-            return []
-
         jobs = []
-        for row in job_table.find_all("tr")[1:]:  # Skip header
-            cols = row.find_all("td")
-            if len(cols) < 3:
+
+        # Each job is a table with class containing 'title'
+        # Structure: <table class="'title'"><tr><td>Job Title</td><td>JobID: 12345</td></tr></table>
+        for table in soup.find_all("table"):
+            cls = str(table.get("class", []))
+            if "title" not in cls.lower():
                 continue
 
-            title = cols[0].get_text(strip=True)
-            location = cols[1].get_text(strip=True)
-            date_str = cols[2].get_text(strip=True)
+            rows = table.find_all("tr")
+            if not rows:
+                continue
 
-            # Parse job URL
-            link_tag = cols[0].find("a")
-            if link_tag and link_tag.get("href"):
-                href = link_tag["href"]
-                if href.startswith("/"):
-                    job_url = f"{APPLITRACK_BASE}/{self.source.slug}/onlineapp/{href.lstrip('/')}"
-                elif href.startswith("http"):
-                    job_url = href
-                else:
-                    job_url = f"{APPLITRACK_BASE}/{self.source.slug}/onlineapp/{href}"
+            cells = rows[0].find_all("td")
+            if not cells:
+                continue
+
+            title = cells[0].get_text(strip=True)
+            if not title:
+                continue
+
+            # Extract JobID from second cell
+            job_id = None
+            if len(cells) > 1:
+                id_text = cells[1].get_text(strip=True)
+                match = re.search(r"JobID:\s*(\d+)", id_text)
+                if match:
+                    job_id = match.group(1)
+
+            # Construct the detail URL
+            if job_id:
+                detail_url = (
+                    f"{APPLITRACK_BASE}/{slug}/onlineapp/default.aspx"
+                    f"?AppliTrackJobId={job_id}&AppliTrackLayoutMode=detail&AppliTrackViewPosting=1"
+                )
             else:
-                job_url = url
+                detail_url = f"{APPLITRACK_BASE}/{slug}/onlineapp/default.aspx"
+
+            # Try to find category from surrounding context
+            # The category is in the preceding section header
+            raw_category = None
 
             jobs.append({
                 "title": title,
-                "location": location,
-                "date_str": date_str,
-                "url": job_url,
+                "job_id": job_id,
+                "url": detail_url,
+                "raw_category": raw_category,
             })
 
-        logger.info(f"Parsed {len(jobs)} listings from Applitrack")
+        logger.info(f"Parsed {len(jobs)} listings from Applitrack Output.asp")
         return jobs
 
     def normalize(self, raw: dict) -> dict:
-        posting_date = None
-        if raw.get("date_str"):
-            try:
-                posting_date = datetime.strptime(raw["date_str"], "%m/%d/%Y")
-            except ValueError:
-                pass
-
         return {
             "title": raw["title"],
             "application_url": raw["url"],
-            "location": raw.get("location"),
-            "city": self._extract_city(raw.get("location", "")),
-            "raw_category": raw.get("location"),
-            "posting_date": posting_date,
+            "raw_category": raw.get("raw_category"),
+            "external_id": raw.get("job_id"),
         }
-
-    @staticmethod
-    def _extract_city(location: str) -> str | None:
-        """Try to extract city from location string."""
-        if not location:
-            return None
-        # Applitrack locations are often school names, not cities
-        # Return as-is for now; normalization service will refine later
-        return location.strip() or None

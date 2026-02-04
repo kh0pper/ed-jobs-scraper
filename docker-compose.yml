@@ -7,6 +7,7 @@ services:
     env_file: .env
     volumes:
       - ./data:/app/data
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy

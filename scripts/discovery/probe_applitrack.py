@@ -89,12 +89,13 @@ def generate_slugs(name: str) -> list[str]:
 def check_applitrack_slug(slug: str, client: httpx.Client) -> bool:
     """Check if an Applitrack page exists for the given slug.
 
-    Returns True if the page returns 200 and contains the job table.
+    Uses the Output.asp endpoint which returns all jobs.
+    Returns True if the page returns 200 and contains job title tables.
     """
-    url = f"{APPLITRACK_BASE}/{slug}/onlineapp/default.aspx?all=1"
+    url = f"{APPLITRACK_BASE}/{slug}/onlineapp/jobpostings/Output.asp?all=1"
     try:
         resp = client.get(url, timeout=15, follow_redirects=True)
-        if resp.status_code == 200 and "listy" in resp.text:
+        if resp.status_code == 200 and "JobID:" in resp.text:
             return True
     except (httpx.HTTPError, httpx.TimeoutException):
         pass
@@ -137,7 +138,7 @@ def probe(dry_run: bool = False, resume: bool = False):
                 time.sleep(RATE_LIMIT_SECONDS)
 
                 if check_applitrack_slug(slug, client):
-                    url = f"{APPLITRACK_BASE}/{slug}/onlineapp/default.aspx?all=1"
+                    url = f"{APPLITRACK_BASE}/{slug}/onlineapp/jobpostings/Output.asp?all=1"
                     logger.info(f"HIT: {org.name} ({org.tea_id}) -> {slug}")
 
                     if not dry_run:
