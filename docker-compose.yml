@@ -35,6 +35,7 @@ services:
       - 8.8.4.4
     volumes:
       - ./data:/app/data
+      - ./scripts:/app/scripts
     depends_on:
       backend:
         condition: service_healthy
