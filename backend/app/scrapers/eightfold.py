@@ -18,23 +18,26 @@ class EightfoldScraper(BaseScraper):
 
     def scrape(self) -> list[dict]:
         """Eightfold has an API endpoint that returns JSON job data."""
-        base_url = self.source.base_url.rstrip("/")
+        from urllib.parse import urlparse
 
-        # Eightfold API pattern: /api/apply/v2/jobs
-        # The exact endpoint may vary per deployment
-        api_url = f"{base_url}/api/apply/v2/jobs"
-        params = {
-            "num": 100,
-            "start": 0,
-            "domain": self.source.slug or "",
-        }
+        base_url = self.source.base_url.rstrip("/")
+        parsed = urlparse(base_url)
+
+        # Eightfold API is at domain root: /api/apply/v2/jobs
+        # Note: Eightfold ignores num param and returns 10 per page
+        api_url = f"{parsed.scheme}://{parsed.netloc}/api/apply/v2/jobs"
+        page_size = 10
 
         all_jobs = []
-        page = 0
+        start = 0
 
         while True:
-            params["start"] = page * 100
-            logger.info(f"Fetching Eightfold API page {page}: {api_url}")
+            params = {
+                "num": page_size,
+                "start": start,
+                "domain": self.source.slug or "",
+            }
+            logger.info(f"Fetching Eightfold API start={start}: {api_url}")
 
             try:
                 resp = httpx.get(
@@ -57,9 +60,10 @@ class EightfoldScraper(BaseScraper):
                 break
 
             all_jobs.extend(positions)
-            page += 1
+            start += len(positions)
 
-            if len(positions) < 100:
+            total = data.get("count", 0)
+            if start >= total or len(positions) < page_size:
                 break
 
         logger.info(f"Fetched {len(all_jobs)} positions from Eightfold")

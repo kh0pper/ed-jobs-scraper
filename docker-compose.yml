@@ -5,6 +5,9 @@ services:
     ports:
       - "8002:8000"
     env_file: .env
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     volumes:
       - ./data:/app/data
       - ./scripts:/app/scripts
@@ -27,6 +30,9 @@ services:
     container_name: edjobs_celery_worker
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
     env_file: .env
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     volumes:
       - ./data:/app/data
     depends_on:

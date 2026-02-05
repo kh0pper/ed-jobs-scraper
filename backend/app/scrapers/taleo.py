@@ -1,7 +1,7 @@
 """Taleo/CAPPS scraper (e.g., Texas Education Agency).
 
 CAPPS (Centralized Accounting and Payroll/Personnel System) uses Oracle Taleo
-for state agency job postings.
+for state agency job postings. Table rows have: [icons, title, location, date, actions].
 """
 
 import asyncio
@@ -28,41 +28,40 @@ class TaleoScraper(BaseScraper):
 
         async with get_browser() as browser:
             page = await browser.new_page()
-            await page.goto(url, wait_until="networkidle")
-            await human_delay(2000, 4000)
+            await page.goto(url, wait_until="domcontentloaded")
+            await human_delay(3000, 5000)
 
             jobs = []
 
-            # Taleo renders a job search results table
-            rows = await page.query_selector_all("table.tablecontent tr, .requisitionListItem, .searchResultItem")
-
-            for row in rows:
+            # Each job row has a link to jobdetail
+            links = await page.query_selector_all("a[href*='jobdetail']")
+            for link in links:
                 try:
-                    link_el = await row.query_selector("a")
-                    if not link_el:
+                    title = await link.inner_text()
+                    href = await link.get_attribute("href") or ""
+
+                    # Navigate up to the row and get sibling cells
+                    row_data = await link.evaluate("""el => {
+                        const row = el.closest('tr');
+                        if (!row) return null;
+                        const cells = row.querySelectorAll('td');
+                        return {
+                            location: cells.length > 2 ? cells[2].innerText.trim() : '',
+                            date: cells.length > 3 ? cells[3].innerText.trim() : '',
+                        };
+                    }""")
+
+                    if not title or not title.strip():
                         continue
 
-                    title = await link_el.inner_text()
-                    href = await link_el.get_attribute("href")
+                    job_url = href if href.startswith("http") else f"https://capps.taleo.net{href}" if href.startswith("/") else url
 
-                    # Try to get other fields from adjacent cells
-                    cells = await row.query_selector_all("td, .column")
-                    location = None
-                    date_str = None
-
-                    if len(cells) >= 2:
-                        location = await cells[1].inner_text()
-                    if len(cells) >= 3:
-                        date_str = await cells[2].inner_text()
-
-                    if title and title.strip():
-                        job_url = href if href and href.startswith("http") else url
-                        jobs.append({
-                            "title": title.strip(),
-                            "location": location.strip() if location else None,
-                            "date_str": date_str.strip() if date_str else None,
-                            "url": job_url,
-                        })
+                    jobs.append({
+                        "title": title.strip(),
+                        "location": row_data["location"] if row_data else None,
+                        "date_str": row_data["date"] if row_data else None,
+                        "url": job_url,
+                    })
                 except Exception as e:
                     logger.debug(f"Failed to parse Taleo row: {e}")
 
@@ -72,7 +71,7 @@ class TaleoScraper(BaseScraper):
     def normalize(self, raw: dict) -> dict:
         posting_date = None
         if raw.get("date_str"):
-            for fmt in ("%m/%d/%Y", "%m/%d/%y", "%b %d, %Y"):
+            for fmt in ("%b %d, %Y", "%m/%d/%Y", "%m/%d/%y", "%B %d, %Y"):
                 try:
                     posting_date = datetime.strptime(raw["date_str"], fmt)
                     break

@@ -51,6 +51,11 @@ class StealthBrowser:
             self.playwright = await async_playwright().start()
             self.browser = await self.playwright.chromium.launch(
                 headless=self.headless,
+                args=[
+                    "--no-sandbox",
+                    "--disable-async-dns",
+                    "--dns-prefetch-disable",
+                ],
             )
             logger.info("Launched Patchright Chromium")
             return True
@@ -64,10 +69,17 @@ class StealthBrowser:
             raise RuntimeError("Browser not launched")
 
         context = await self.browser.new_context(**BROWSER_CONTEXT_OPTIONS)
-        await context.add_init_script(STEALTH_INIT_SCRIPT)
+        # Note: context.add_init_script breaks DNS resolution in Docker
+        # (Patchright bug). Stealth scripts are injected post-navigation
+        # via apply_stealth() instead.
         page = await context.new_page()
         page.set_default_timeout(self.timeout)
         return page
+
+    @staticmethod
+    async def apply_stealth(page):
+        """Inject stealth scripts after page load. Call after goto()."""
+        await page.evaluate(STEALTH_INIT_SCRIPT)
 
     async def close(self):
         if self.browser:

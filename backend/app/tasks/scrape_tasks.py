@@ -5,7 +5,10 @@ from datetime import datetime, timezone, timedelta
 
 from app.tasks.celery_app import celery_app
 from app.models.base import SyncSessionLocal
+from app.models.organization import Organization  # noqa: F401
 from app.models.scrape_source import ScrapeSource
+from app.models.job_posting import JobPosting  # noqa: F401
+from app.models.scrape_run import ScrapeRun  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +46,6 @@ def dispatch_due_scrapes():
 @celery_app.task(name="app.tasks.scrape_tasks.scrape_source")
 def scrape_source(source_id: str):
     """Scrape a single source. Looks up the platform and delegates to the appropriate scraper."""
-    from app.models.scrape_run import ScrapeRun
     import uuid
 
     db = SyncSessionLocal()

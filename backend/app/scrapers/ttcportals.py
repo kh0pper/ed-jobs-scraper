@@ -26,7 +26,7 @@ class TtcPortalsScraper(BaseScraper):
 
         async with get_browser() as browser:
             page = await browser.new_page()
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
             await human_delay(2000, 3000)
 
             jobs = []

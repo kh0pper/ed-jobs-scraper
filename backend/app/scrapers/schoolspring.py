@@ -1,11 +1,15 @@
 """SchoolSpring scraper.
 
 URL pattern: https://{slug}.schoolspring.com/
-SchoolSpring pages are JS-rendered, so we use the stealth browser.
+SchoolSpring is a Vue SPA with card-based job listings.
+Each card has: title (.card-title), school (.card-text:nth-child(2)),
+location (.card-text:nth-child(3)), date (.card-text:nth-child(4)).
+Jobs load via infinite scroll (25 per batch).
 """
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 
 from app.scrapers.base import BaseScraper
@@ -31,37 +35,44 @@ class SchoolSpringScraper(BaseScraper):
             await page.goto(url, wait_until="networkidle")
             await human_delay(1000, 2000)
 
-            # SchoolSpring renders job listings dynamically
-            # Look for job listing elements
+            # Scroll to load all jobs (infinite scroll, 25 per batch)
+            prev_count = 0
+            max_scrolls = 50  # Safety limit (~1250 jobs max)
+            for _ in range(max_scrolls):
+                cards = await page.query_selector_all(".card")
+                if len(cards) == prev_count:
+                    break
+                prev_count = len(cards)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await human_delay(800, 1500)
+
+            # Parse all cards
+            cards = await page.query_selector_all(".card")
+            logger.info(f"Found {len(cards)} card elements")
+
             jobs = []
-            listings = await page.query_selector_all(".job-listing, .search-result, tr.job-row, .opportunity-row")
-
-            if not listings:
-                # Try broader selectors
-                listings = await page.query_selector_all("[data-job-id], .posting-item, .result-item")
-
-            for listing in listings:
+            for card in cards:
                 try:
-                    title_el = await listing.query_selector("a, .title, .job-title, h3, h4")
+                    title_el = await card.query_selector(".card-title")
                     title = await title_el.inner_text() if title_el else None
-                    href = await title_el.get_attribute("href") if title_el else None
+                    if not title:
+                        continue
 
-                    location_el = await listing.query_selector(".location, .school, .district")
-                    location = await location_el.inner_text() if location_el else None
+                    # card-text elements: school, location, date
+                    texts = await card.query_selector_all(".card-text")
+                    school = await texts[0].inner_text() if len(texts) > 0 else None
+                    location = await texts[1].inner_text() if len(texts) > 1 else None
+                    date_str = await texts[2].inner_text() if len(texts) > 2 else None
 
-                    date_el = await listing.query_selector(".date, .posted-date, .deadline")
-                    date_str = await date_el.inner_text() if date_el else None
-
-                    if title:
-                        job_url = href if href and href.startswith("http") else f"{url.rstrip('/')}/{href}" if href else url
-                        jobs.append({
-                            "title": title.strip(),
-                            "location": location.strip() if location else None,
-                            "date_str": date_str.strip() if date_str else None,
-                            "url": job_url,
-                        })
+                    jobs.append({
+                        "title": title.strip(),
+                        "school": school.strip() if school else None,
+                        "location": location.strip() if location else None,
+                        "date_str": date_str.strip() if date_str else None,
+                        "url": url,  # No per-job URLs available from listing
+                    })
                 except Exception as e:
-                    logger.debug(f"Failed to parse listing: {e}")
+                    logger.debug(f"Failed to parse card: {e}")
 
             logger.info(f"Parsed {len(jobs)} listings from SchoolSpring")
             return jobs
@@ -69,16 +80,31 @@ class SchoolSpringScraper(BaseScraper):
     def normalize(self, raw: dict) -> dict:
         posting_date = None
         if raw.get("date_str"):
-            for fmt in ("%m/%d/%Y", "%B %d, %Y", "%Y-%m-%d"):
-                try:
-                    posting_date = datetime.strptime(raw["date_str"], fmt)
-                    break
-                except ValueError:
-                    continue
+            date_str = raw["date_str"]
+            # Handle "Yesterday", "Today", etc.
+            if "yesterday" in date_str.lower() or "today" in date_str.lower():
+                posting_date = datetime.utcnow()
+            else:
+                # Strip timezone info: "Feb 03, 2026 6:00 AM (UTC)"
+                clean = re.sub(r"\s*\(.*?\)\s*$", "", date_str)
+                for fmt in ("%b %d, %Y %I:%M %p", "%b %d, %Y", "%m/%d/%Y", "%B %d, %Y", "%Y-%m-%d"):
+                    try:
+                        posting_date = datetime.strptime(clean, fmt)
+                        break
+                    except ValueError:
+                        continue
+
+        city = None
+        if raw.get("location"):
+            parts = raw["location"].split(",")
+            if parts:
+                city = parts[0].strip()
 
         return {
             "title": raw["title"],
             "application_url": raw["url"],
             "location": raw.get("location"),
+            "city": city,
+            "department": raw.get("school"),
             "posting_date": posting_date,
         }
