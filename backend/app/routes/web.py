@@ -201,6 +201,42 @@ async def jobs_list(
     )
 
 
+@router.get("/jobs/map", response_class=HTMLResponse)
+async def jobs_map(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Map view of job postings with Leaflet.js."""
+    # Get count of geocoded jobs for display
+    geocoded_count = (await db.execute(
+        select(func.count(JobPosting.id))
+        .where(JobPosting.is_active == True)
+        .where(JobPosting.latitude.isnot(None))
+        .where(JobPosting.longitude.isnot(None))
+    )).scalar() or 0
+
+    # Get some stats for the map sidebar
+    city_query = (
+        select(JobPosting.city, func.count(JobPosting.id).label("count"))
+        .where(JobPosting.is_active == True)
+        .where(JobPosting.city.isnot(None))
+        .group_by(JobPosting.city)
+        .order_by(func.count(JobPosting.id).desc())
+        .limit(10)
+    )
+    city_result = await db.execute(city_query)
+    top_cities = [(row.city, row.count) for row in city_result]
+
+    return templates.TemplateResponse(
+        "jobs/map.html",
+        {
+            "request": request,
+            "geocoded_count": geocoded_count,
+            "top_cities": top_cities,
+        },
+    )
+
+
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
 async def job_detail(request: Request, job_id: UUID, db: AsyncSession = Depends(get_db)):
     """Single job detail page."""
@@ -314,42 +350,6 @@ async def orgs_list(
             "limit": limit,
             "filters": filters,
             "pagination_query": pagination_query,
-        },
-    )
-
-
-@router.get("/jobs/map", response_class=HTMLResponse)
-async def jobs_map(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Map view of job postings with Leaflet.js."""
-    # Get count of geocoded jobs for display
-    geocoded_count = (await db.execute(
-        select(func.count(JobPosting.id))
-        .where(JobPosting.is_active == True)
-        .where(JobPosting.latitude.isnot(None))
-        .where(JobPosting.longitude.isnot(None))
-    )).scalar() or 0
-
-    # Get some stats for the map sidebar
-    city_query = (
-        select(JobPosting.city, func.count(JobPosting.id).label("count"))
-        .where(JobPosting.is_active == True)
-        .where(JobPosting.city.isnot(None))
-        .group_by(JobPosting.city)
-        .order_by(func.count(JobPosting.id).desc())
-        .limit(10)
-    )
-    city_result = await db.execute(city_query)
-    top_cities = [(row.city, row.count) for row in city_result]
-
-    return templates.TemplateResponse(
-        "jobs/map.html",
-        {
-            "request": request,
-            "geocoded_count": geocoded_count,
-            "top_cities": top_cities,
         },
     )
 
