@@ -70,4 +70,5 @@ class MunisScraper(BaseScraper):
             "title": raw["title"],
             "application_url": raw["url"],
             "location": raw.get("location"),
+            "state": "TX",  # Munis sources are Texas school districts
         }

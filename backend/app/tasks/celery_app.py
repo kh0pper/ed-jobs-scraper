@@ -14,6 +14,7 @@ celery_app = Celery(
     include=[
         "app.tasks.scrape_tasks",
         "app.tasks.maintenance_tasks",
+        "app.tasks.data_quality_tasks",
     ],
 )
 
@@ -35,9 +36,17 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.scrape_tasks.dispatch_due_scrapes",
         "schedule": crontab(minute="*/30"),
     },
-    "geocode-pending": {
-        "task": "app.tasks.maintenance_tasks.geocode_pending",
+    "geocode-pending-jobs": {
+        "task": "app.tasks.data_quality_tasks.geocode_pending_jobs",
         "schedule": crontab(minute=0, hour="*/2"),
+    },
+    "geocode-pending-orgs": {
+        "task": "app.tasks.data_quality_tasks.geocode_pending_organizations",
+        "schedule": crontab(minute=30, hour="*/4"),
+    },
+    "normalize-job-categories": {
+        "task": "app.tasks.data_quality_tasks.normalize_job_categories",
+        "schedule": crontab(minute="*/15"),
     },
     "mark-stale-postings": {
         "task": "app.tasks.maintenance_tasks.mark_stale_postings",

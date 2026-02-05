@@ -82,5 +82,6 @@ class TaleoScraper(BaseScraper):
             "title": raw["title"],
             "application_url": raw["url"],
             "location": raw.get("location"),
+            "state": "TX",  # Taleo/CAPPS sources are Texas state agencies
             "posting_date": posting_date,
         }

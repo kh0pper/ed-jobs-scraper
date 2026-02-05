@@ -1,0 +1,45 @@
+/* Custom styles for Texas Ed Jobs */
+
+/* Additional utility classes */
+.text-balance {
+    text-wrap: balance;
+}
+
+/* Loading indicator animation */
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+    opacity: 1;
+}
+
+/* Smooth page transitions */
+.htmx-swapping {
+    opacity: 0;
+    transition: opacity 100ms ease-out;
+}
+
+/* Card hover effects */
+.card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Job listing animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in-up {
+    animation: fadeInUp 0.3s ease-out forwards;
+}

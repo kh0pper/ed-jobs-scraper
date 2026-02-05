@@ -100,4 +100,5 @@ class ApplitrackScraper(BaseScraper):
             "application_url": raw["url"],
             "raw_category": raw.get("raw_category"),
             "external_id": raw.get("job_id"),
+            "state": "TX",  # Applitrack sources are Texas districts
         }

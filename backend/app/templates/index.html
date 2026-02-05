@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Texas Ed Jobs - Home{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Hero Section -->
+    <div class="hero bg-primary rounded-box py-16">
+        <div class="hero-content text-center text-primary-content">
+            <div class="max-w-lg">
+                <h1 class="text-4xl font-bold">Find Your Next Education Job in Texas</h1>
+                <p class="py-6 text-lg opacity-90">
+                    {{ stats.active_jobs | default(0) | int }} active jobs across {{ stats.total_sources | default(0) }} school districts and organizations
+                </p>
+
+                <!-- Search Form -->
+                <form action="/jobs" method="get" class="join w-full max-w-md mx-auto">
+                    <input type="text" name="search" placeholder="Search jobs..."
+                           class="input input-bordered join-item flex-1">
+                    <button type="submit" class="btn btn-secondary join-item">
+                        Search
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats stats-vertical lg:stats-horizontal shadow w-full">
+        <div class="stat">
+            <div class="stat-figure text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Total Jobs</div>
+            <div class="stat-value text-primary">{{ stats.total_jobs | default(0) | int }}</div>
+            <div class="stat-desc">Active postings</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure text-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Organizations</div>
+            <div class="stat-value text-secondary">{{ stats.total_orgs | default(0) }}</div>
+            <div class="stat-desc">Districts &amp; orgs</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure text-accent">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Platforms</div>
+            <div class="stat-value text-accent">{{ stats.by_platform | default({}) | length }}</div>
+            <div class="stat-desc">Job sources</div>
+        </div>
+    </div>
+
+    <!-- Jobs by Category -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl mb-4">Jobs by Category</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {% for category, count in (stats.by_category | default({})).items() %}
+                <a href="/jobs?category={{ category | urlencode }}"
+                   class="card bg-base-200 hover:bg-primary hover:text-primary-content transition-colors">
+                    <div class="card-body p-4">
+                        <p class="font-semibold text-sm">{{ category }}</p>
+                        <p class="text-2xl font-bold">{{ count }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Jobs by City -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="card-title text-2xl">Top Cities</h2>
+                <a href="/jobs/map" class="btn btn-outline btn-sm">View Map</a>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {% for city, count in (stats.by_city | default({})).items() %}
+                <a href="/jobs?city={{ city | urlencode }}"
+                   class="card bg-base-200 hover:bg-secondary hover:text-secondary-content transition-colors">
+                    <div class="card-body p-4">
+                        <p class="font-semibold text-sm">{{ city }}</p>
+                        <p class="text-2xl font-bold">{{ count }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Jobs -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="card-title text-2xl">Recent Jobs</h2>
+                <a href="/jobs" class="btn btn-ghost btn-sm">View all</a>
+            </div>
+            <div class="space-y-3">
+                {% for job in recent_jobs %}
+                <a href="/jobs/{{ job.id }}" class="block p-4 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-semibold">{{ job.title }}</h3>
+                            <p class="text-sm opacity-70">{{ job.org_name | default("Unknown Organization") }}</p>
+                        </div>
+                        <div class="text-right flex flex-col items-end gap-1">
+                            {% if job.category %}
+                            <span class="badge badge-primary badge-sm">{{ job.category }}</span>
+                            {% endif %}
+                            {% if job.city %}
+                            <span class="text-sm opacity-60">{{ job.city }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+                {% else %}
+                <div class="alert">
+                    <span>No jobs found yet. Check back soon!</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

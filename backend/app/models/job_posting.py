@@ -23,6 +23,7 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
     # Structured fields (populated when available)
     location = Column(String(255))
     city = Column(String(100), index=True)
+    state = Column(String(2), index=True)  # 2-letter state code (TX, CA, etc.)
     category = Column(String(100), index=True)  # normalized
     raw_category = Column(String(255))
     department = Column(String(255))
@@ -60,4 +61,5 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
         Index("idx_job_active_date", "is_active", "posting_date"),
         Index("idx_job_geo", "latitude", "longitude"),
         Index("idx_job_platform_external", "platform", "external_id"),
+        Index("idx_job_state_active", "state", "is_active"),
     )

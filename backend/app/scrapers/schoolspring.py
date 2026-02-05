@@ -155,11 +155,20 @@ class SchoolSpringScraper(BaseScraper):
             if parts:
                 city = parts[0].strip()
 
+        # Parse state from location (e.g., "Spring, TX" -> "TX")
+        state = "TX"  # Default to TX for Texas-based org
+        if raw.get("location"):
+            loc = raw["location"].upper()
+            match = re.search(r"\b([A-Z]{2})\s*$", loc)
+            if match:
+                state = match.group(1)
+
         return {
             "title": raw["title"],
             "application_url": raw["url"],
             "location": raw.get("location"),
             "city": city,
+            "state": state,
             "department": raw.get("school"),
             "posting_date": posting_date,
         }

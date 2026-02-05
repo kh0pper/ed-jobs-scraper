@@ -19,8 +19,13 @@ lxml>=5.1.0
 
 # Browser automation
 patchright>=0.1.0
+camoufox[geoip]>=0.4.0
 
 # Utilities
 python-dotenv>=1.0.0
 pydantic-settings>=2.1.0
 pydantic>=2.5.3
+
+# Frontend templates
+jinja2>=3.1.2
+aiofiles>=23.2.1

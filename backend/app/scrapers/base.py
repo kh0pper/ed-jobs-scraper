@@ -40,7 +40,7 @@ class BaseScraper(ABC):
             - application_url (str)
 
         Optional fields:
-            - location, city, category, raw_category, department
+            - location, city, state, category, raw_category, department
             - employment_type, salary_min, salary_max, salary_text
             - posting_date, closing_date, description, requirements
             - external_id, extra_data (dict)
@@ -81,7 +81,7 @@ class BaseScraper(ABC):
             existing.last_seen_at = now
             if existing.content_hash != content_hash:
                 # Content changed — update fields
-                for key in ("title", "location", "city", "category", "raw_category",
+                for key in ("title", "location", "city", "state", "category", "raw_category",
                             "department", "employment_type", "salary_min", "salary_max",
                             "salary_text", "closing_date", "description", "requirements"):
                     if key in data and data[key] is not None:
@@ -105,6 +105,7 @@ class BaseScraper(ABC):
                 application_url=data["application_url"],
                 location=data.get("location"),
                 city=data.get("city"),
+                state=data.get("state"),
                 category=data.get("category"),
                 raw_category=data.get("raw_category"),
                 department=data.get("department"),

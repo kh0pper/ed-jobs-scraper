@@ -43,6 +43,9 @@ RUN pip install --no-cache-dir --no-deps patchright && \
     rm /tmp/google-chrome.deb && rm -rf /var/lib/apt/lists/* && \
     patchright install chrome
 
+# Install Camoufox browser (Firefox-based anti-detect for Cloudflare Turnstile)
+RUN python -m camoufox fetch
+
 # Application code
 COPY app ./app
 COPY alembic.ini .

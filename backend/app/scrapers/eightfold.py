@@ -4,6 +4,7 @@ Eightfold exposes a JSON API for career listings.
 """
 
 import logging
+import re
 
 import httpx
 
@@ -70,11 +71,20 @@ class EightfoldScraper(BaseScraper):
         return all_jobs
 
     def normalize(self, raw: dict) -> dict:
+        # Parse state from location (e.g., "Houston, TX" -> "TX")
+        state = "TX"  # Default for Texas-based orgs
+        location = raw.get("location", "")
+        if location:
+            match = re.search(r"\b([A-Z]{2})\b", location.upper())
+            if match:
+                state = match.group(1)
+
         return {
             "title": raw.get("name", "Unknown Position"),
             "application_url": raw.get("canonicalPositionUrl", raw.get("apply_url", self.source.base_url)),
-            "location": raw.get("location", ""),
+            "location": location,
             "city": raw.get("city"),
+            "state": state,
             "department": raw.get("department"),
             "employment_type": raw.get("type"),
             "description": raw.get("description", ""),

@@ -85,6 +85,7 @@ class SimpleCareerScraper(BaseScraper):
         return {
             "title": raw["title"],
             "application_url": raw["url"],
+            "state": "TX",  # Simple career sources are Texas orgs
         }
 
     @staticmethod

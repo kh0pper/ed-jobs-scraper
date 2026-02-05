@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}{{ org.name }} - Texas Ed Jobs{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Breadcrumb -->
+    <div class="breadcrumbs text-sm">
+        <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/orgs">Organizations</a></li>
+            <li>{{ org.name }}</li>
+        </ul>
+    </div>
+
+    <!-- Organization Header -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex flex-col lg:flex-row justify-between items-start gap-4">
+                <div>
+                    <h1 class="card-title text-3xl">{{ org.name }}</h1>
+                    <p class="text-xl opacity-70 capitalize mt-1">{{ org.org_type }}</p>
+                </div>
+                {% if org.website_url %}
+                <a href="{{ org.website_url }}" target="_blank" rel="noopener"
+                   class="btn btn-primary gap-2">
+                    Visit Website
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Stats -->
+            <div class="stats stats-vertical sm:stats-horizontal shadow mt-6 w-full">
+                <div class="stat">
+                    <div class="stat-title">Active Jobs</div>
+                    <div class="stat-value text-primary">{{ org.active_job_count }}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">Job Sources</div>
+                    <div class="stat-value text-secondary">{{ org.source_count }}</div>
+                </div>
+                {% if org.total_students %}
+                <div class="stat">
+                    <div class="stat-title">Students</div>
+                    <div class="stat-value">{{ "{:,}".format(org.total_students) }}</div>
+                </div>
+                {% endif %}
+                {% if org.esc_region %}
+                <div class="stat">
+                    <div class="stat-title">ESC Region</div>
+                    <div class="stat-value">{{ org.esc_region }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Organization Details & Jobs Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Sidebar: Organization Info -->
+        <div class="space-y-6">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h3 class="card-title text-lg">Organization Details</h3>
+                    <dl class="space-y-3 mt-2">
+                        {% if org.city %}
+                        <div>
+                            <dt class="text-sm opacity-70">Location</dt>
+                            <dd class="font-medium">{{ org.city }}, {{ org.state | default('TX') }}</dd>
+                        </div>
+                        {% endif %}
+                        {% if org.county %}
+                        <div>
+                            <dt class="text-sm opacity-70">County</dt>
+                            <dd class="font-medium">{{ org.county }}</dd>
+                        </div>
+                        {% endif %}
+                        {% if org.esc_region %}
+                        <div>
+                            <dt class="text-sm opacity-70">ESC Region</dt>
+                            <dd class="font-medium">Region {{ org.esc_region }}</dd>
+                        </div>
+                        {% endif %}
+                        {% if org.tea_id %}
+                        <div>
+                            <dt class="text-sm opacity-70">TEA ID</dt>
+                            <dd class="font-mono">{{ org.tea_id }}</dd>
+                        </div>
+                        {% endif %}
+                        {% if org.district_type %}
+                        <div>
+                            <dt class="text-sm opacity-70">District Type</dt>
+                            <dd class="font-medium">{{ org.district_type }}</dd>
+                        </div>
+                        {% endif %}
+                        {% if org.charter_status %}
+                        <div>
+                            <dt class="text-sm opacity-70">Charter Status</dt>
+                            <dd class="font-medium">{{ org.charter_status }}</dd>
+                        </div>
+                        {% endif %}
+                        <div>
+                            <dt class="text-sm opacity-70">Platform Status</dt>
+                            <dd>
+                                {% if org.platform_status == 'mapped' %}
+                                <span class="badge badge-success">Mapped</span>
+                                {% elif org.platform_status == 'probing' %}
+                                <span class="badge badge-warning">Probing</span>
+                                {% else %}
+                                <span class="badge badge-ghost">{{ org.platform_status }}</span>
+                                {% endif %}
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Scrape Sources -->
+            {% if sources %}
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h3 class="card-title text-lg">Job Sources</h3>
+                    <div class="space-y-3 mt-2">
+                        {% for source in sources %}
+                        <div class="p-3 bg-base-200 rounded-lg">
+                            <p class="font-medium capitalize">{{ source.platform }}</p>
+                            <p class="text-sm opacity-60 truncate">{{ source.base_url }}</p>
+                            <div class="flex justify-between items-center mt-2 text-xs opacity-60">
+                                <span>{{ source.last_job_count }} jobs</span>
+                                {% if source.last_scraped_at %}
+                                <span>Updated {{ source.last_scraped_at.strftime('%b %d, %H:%M') }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Main: Jobs List -->
+        <div class="lg:col-span-2">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <div class="flex justify-between items-center">
+                        <h2 class="card-title text-xl">Open Positions</h2>
+                        <span class="badge badge-ghost">{{ jobs | length }} jobs</span>
+                    </div>
+
+                    <div class="space-y-4 mt-4">
+                        {% for job in jobs %}
+                        <div class="p-4 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
+                            <div class="flex flex-col sm:flex-row justify-between items-start gap-3">
+                                <div class="flex-1">
+                                    <a href="/jobs/{{ job.id }}" class="font-semibold text-primary hover:text-primary-focus">
+                                        {{ job.title }}
+                                    </a>
+                                    <div class="flex flex-wrap gap-2 mt-2">
+                                        {% if job.category %}
+                                        <span class="badge badge-primary badge-sm">{{ job.category }}</span>
+                                        {% endif %}
+                                        {% if job.city %}
+                                        <span class="badge badge-ghost badge-sm">{{ job.city }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <a href="{{ job.application_url }}" target="_blank" rel="noopener"
+                                   class="btn btn-success btn-sm">
+                                    Apply
+                                </a>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="alert">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span>No active job postings at this time.</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    {% if job_count > 50 %}
+                    <div class="card-actions justify-center mt-4">
+                        <a href="/jobs?organization_id={{ org.id }}" class="btn btn-ghost">
+                            View all {{ job_count }} jobs
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
