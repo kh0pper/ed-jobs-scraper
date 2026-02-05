@@ -43,7 +43,7 @@ class Geocoder:
         self.rate_limit = rate_limit
         self.last_request_time = 0.0
         self.base_url = settings.nominatim_url
-        self.user_agent = "TexasEdJobsScraper/1.0 (https://github.com/kh0pper/ed-jobs-scraper)"
+        self.user_agent = "TexasEdJobsScraper/1.0 (mailto:kh0pper@gmail.com; https://github.com/kh0pper/ed-jobs-scraper)"
 
     def _wait_for_rate_limit(self) -> None:
         """Block until rate limit allows next request."""
