@@ -33,10 +33,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Patchright browser
+# Install Patchright browser (Chromium + full Chrome for Cloudflare bypass)
 RUN pip install --no-cache-dir --no-deps patchright && \
     patchright install-deps chromium && \
-    patchright install chromium
+    patchright install chromium && \
+    wget -q -O /tmp/google-chrome.deb \
+        https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    apt-get update && apt-get install -y /tmp/google-chrome.deb && \
+    rm /tmp/google-chrome.deb && rm -rf /var/lib/apt/lists/* && \
+    patchright install chrome
 
 # Application code
 COPY app ./app

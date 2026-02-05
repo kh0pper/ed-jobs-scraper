@@ -100,9 +100,10 @@ BROWSER_CONTEXT_OPTIONS = {
 class StealthBrowser:
     """Browser wrapper with anti-detection features."""
 
-    def __init__(self, headless: bool = True, timeout: int = 30000):
+    def __init__(self, headless: bool = True, timeout: int = 30000, channel: str | None = None):
         self.headless = headless
         self.timeout = timeout
+        self.channel = channel
         self.browser = None
         self.playwright = None
 
@@ -111,11 +112,14 @@ class StealthBrowser:
         try:
             from patchright.async_api import async_playwright
             self.playwright = await async_playwright().start()
-            self.browser = await self.playwright.chromium.launch(
-                headless=self.headless,
-                args=BROWSER_LAUNCH_ARGS,
-            )
-            logger.info("Launched Patchright Chromium")
+            launch_kwargs = {
+                "headless": self.headless,
+                "args": BROWSER_LAUNCH_ARGS,
+            }
+            if self.channel:
+                launch_kwargs["channel"] = self.channel
+            self.browser = await self.playwright.chromium.launch(**launch_kwargs)
+            logger.info(f"Launched Patchright {'Chrome' if self.channel else 'Chromium'}")
             return True
         except Exception as e:
             logger.error(f"Failed to launch browser: {e}")
@@ -171,9 +175,14 @@ class StealthBrowser:
 
 
 @asynccontextmanager
-async def get_browser(headless: bool = True, timeout: int = 30000):
-    """Context manager for stealth browser sessions."""
-    browser = StealthBrowser(headless=headless, timeout=timeout)
+async def get_browser(headless: bool = True, timeout: int = 30000, channel: str | None = None):
+    """Context manager for stealth browser sessions.
+
+    Args:
+        channel: Browser channel. Use "chrome" for full Google Chrome
+                 (better Cloudflare bypass). Default None uses Chromium.
+    """
+    browser = StealthBrowser(headless=headless, timeout=timeout, channel=channel)
     try:
         if not await browser.launch():
             raise RuntimeError("Failed to launch stealth browser")

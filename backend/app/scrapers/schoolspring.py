@@ -1,10 +1,10 @@
 """SchoolSpring scraper.
 
 URL pattern: https://{slug}.schoolspring.com/
-SchoolSpring is a Vue SPA with card-based job listings.
+SchoolSpring is a SPA with card-based job listings.
 Each card has: title (.card-title), school (.card-text:nth-child(2)),
 location (.card-text:nth-child(3)), date (.card-text:nth-child(4)).
-Jobs load via infinite scroll (25 per batch).
+Jobs load 25 per batch via a "More Jobs" button at the bottom of #jobListPanel.
 """
 
 import asyncio
@@ -45,46 +45,52 @@ class SchoolSpringScraper(BaseScraper):
             except Exception:
                 expected_total = None
 
-            # Scroll to load all jobs via infinite scroll
-            # Vue SPAs use intersection observers, so scrollIntoView on the
-            # last card is more reliable than window.scrollTo
-            prev_count = 0
-            max_scrolls = 50  # Safety limit (~1250 jobs max)
+            # Click "More Jobs" button repeatedly to load all jobs (25 per batch)
+            max_clicks = 50  # Safety limit (~1250 jobs max)
             stall_count = 0
+            prev_count = 0
 
-            for i in range(max_scrolls):
+            for i in range(max_clicks):
                 cards = await page.query_selector_all(".card")
                 current_count = len(cards)
 
                 if current_count == prev_count:
                     stall_count += 1
                     if stall_count >= 3:
-                        logger.info(f"Scroll stalled at {current_count} cards after {i} scrolls")
+                        logger.info(f"No new cards after {i} clicks, stopping at {current_count}")
                         break
                 else:
                     stall_count = 0
+                    if i % 5 == 0:
+                        logger.info(f"SchoolSpring progress: {current_count} cards loaded")
 
                 prev_count = current_count
 
-                # Scroll last card into view to trigger intersection observer
-                if cards:
-                    last_card = cards[-1]
-                    await last_card.scroll_into_view_if_needed()
+                # Find and click the "More Jobs" button
+                more_btn = await page.query_selector("button:has-text('More Jobs')")
+                if not more_btn:
+                    logger.info(f"No 'More Jobs' button found, done at {current_count} cards")
+                    break
+
+                # Scroll button into view and click
+                await more_btn.scroll_into_view_if_needed()
+                await human_delay(300, 600)
+                await more_btn.click()
 
                 # Wait for new cards to appear
                 try:
                     await page.wait_for_function(
                         f"document.querySelectorAll('.card').length > {current_count}",
-                        timeout=5000,
+                        timeout=10000,
                     )
                 except Exception:
-                    pass  # Timeout = possibly no more cards, stall_count handles it
+                    pass  # Timeout handled by stall_count
 
                 await human_delay(500, 1000)
 
             # Parse all cards
             cards = await page.query_selector_all(".card")
-            logger.info(f"Found {len(cards)} card elements after scrolling")
+            logger.info(f"Found {len(cards)} card elements after loading")
 
             jobs = []
             for card in cards:

@@ -25,7 +25,7 @@ class TtcPortalsScraper(BaseScraper):
         url = self.source.base_url
         logger.info(f"Fetching TTC Portals page: {url}")
 
-        async with get_browser(timeout=60000) as browser:
+        async with get_browser(timeout=60000, channel="chrome") as browser:
             page = await browser.new_page()
 
             # Use session warming to bypass Cloudflare
