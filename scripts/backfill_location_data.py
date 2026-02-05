@@ -64,29 +64,34 @@ def backfill_job_cities_from_location(db: Session, batch_size: int = 1000) -> di
     print("\n=== Step 2: Parsing city from job location strings ===")
 
     total_updated = 0
-    offset = 0
+    skipped = 0
 
     while True:
+        # NOTE: We skip unparseable jobs via offset. The offset accumulates only
+        # the count of jobs we couldn't parse (still have city IS NULL).
         jobs = db.query(JobPosting).filter(
             JobPosting.city.is_(None),
             JobPosting.location.isnot(None),
             JobPosting.is_active == True,  # noqa: E712
-        ).offset(offset).limit(batch_size).all()
+        ).offset(skipped).limit(batch_size).all()
 
         if not jobs:
             break
 
         batch_updated = 0
+        batch_skipped = 0
         for job in jobs:
             city = parse_city_from_location(job.location)
             if city:
                 job.city = city
                 batch_updated += 1
+            else:
+                batch_skipped += 1
 
         db.commit()
         total_updated += batch_updated
-        offset += batch_size
-        print(f"  Progress: {offset} jobs processed, {total_updated} updated")
+        skipped += batch_skipped
+        print(f"  Progress: {total_updated} updated, {skipped} skipped")
 
     print(f"Parsed city from location for {total_updated} jobs")
     return {"jobs_from_location": total_updated}
@@ -97,17 +102,17 @@ def backfill_job_cities_from_org(db: Session, batch_size: int = 1000) -> dict:
     print("\n=== Step 3: Inheriting city from organization ===")
 
     total_updated = 0
-    offset = 0
 
     while True:
         # Find jobs still without city, join with org that has city
+        # NOTE: Don't use offset - the filter results change as we update
         jobs = db.query(JobPosting).join(
             Organization, JobPosting.organization_id == Organization.id
         ).filter(
             JobPosting.city.is_(None),
             JobPosting.is_active == True,  # noqa: E712
             Organization.city.isnot(None),
-        ).offset(offset).limit(batch_size).all()
+        ).limit(batch_size).all()
 
         if not jobs:
             break
@@ -124,8 +129,7 @@ def backfill_job_cities_from_org(db: Session, batch_size: int = 1000) -> dict:
 
         db.commit()
         total_updated += batch_updated
-        offset += batch_size
-        print(f"  Progress: {offset} jobs processed, {total_updated} updated")
+        print(f"  Progress: {total_updated} jobs updated so far")
 
     print(f"Inherited city from org for {total_updated} jobs")
     return {"jobs_from_org": total_updated}
