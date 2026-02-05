@@ -179,10 +179,10 @@ async def jobs_list(
     pagination_query = urlencode(params)
 
     filters = {
-        "search": search,
-        "category": category,
-        "city": city,
-        "platform": platform,
+        "search": search or "",
+        "category": category or "",
+        "city": city or "",
+        "platform": platform or "",
     }
 
     return templates.TemplateResponse(
