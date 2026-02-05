@@ -38,7 +38,7 @@ celery_app.conf.beat_schedule = {
     },
     "geocode-pending-jobs": {
         "task": "app.tasks.data_quality_tasks.geocode_pending_jobs",
-        "schedule": crontab(minute=0, hour="*/2"),
+        "schedule": crontab(minute="*/15"),  # Temporary: every 15min for backlog catch-up
     },
     "geocode-pending-orgs": {
         "task": "app.tasks.data_quality_tasks.geocode_pending_organizations",
