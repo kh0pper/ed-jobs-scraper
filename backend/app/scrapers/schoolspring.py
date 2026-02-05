@@ -45,6 +45,18 @@ class SchoolSpringScraper(BaseScraper):
             except Exception:
                 expected_total = None
 
+            # Dismiss any overlay dialog that may block clicks
+            try:
+                overlay = await page.query_selector("pds-dialog .pds-overlay")
+                if overlay:
+                    await page.evaluate("""() => {
+                        const dialogs = document.querySelectorAll('pds-dialog');
+                        dialogs.forEach(d => d.style.display = 'none');
+                    }""")
+                    logger.info("Dismissed overlay dialog")
+            except Exception:
+                pass
+
             # Click "More Jobs" button repeatedly to load all jobs (25 per batch)
             max_clicks = 50  # Safety limit (~1250 jobs max)
             stall_count = 0
@@ -72,10 +84,10 @@ class SchoolSpringScraper(BaseScraper):
                     logger.info(f"No 'More Jobs' button found, done at {current_count} cards")
                     break
 
-                # Scroll button into view and click
+                # Scroll button into view and click (force to bypass any remaining overlays)
                 await more_btn.scroll_into_view_if_needed()
                 await human_delay(300, 600)
-                await more_btn.click()
+                await more_btn.click(force=True)
 
                 # Wait for new cards to appear
                 try:
