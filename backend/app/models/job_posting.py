@@ -1,6 +1,6 @@
 """Job posting model — core job table."""
 
-from sqlalchemy import Column, String, Float, Boolean, DateTime, Text, ForeignKey, Index
+from sqlalchemy import Column, String, Float, Boolean, DateTime, Text, ForeignKey, Index, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -46,10 +46,16 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
     external_id = Column(String(255))
     extra_data = Column(JSONB, default=dict)
 
+    # Location - specific campus/school (when available from platform)
+    campus = Column(String(255))
+
     # Lifecycle
     first_seen_at = Column(DateTime(timezone=True), nullable=False)
     last_seen_at = Column(DateTime(timezone=True), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_seen_run_id = Column(UUID(as_uuid=True), ForeignKey("scrape_runs.id"), index=True)
+    removal_detected_at = Column(DateTime(timezone=True))
+    reactivation_count = Column(Integer, default=0, nullable=False)
 
     # Relationships (import strings to avoid circular imports)
     from sqlalchemy.orm import relationship
@@ -62,4 +68,6 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
         Index("idx_job_geo", "latitude", "longitude"),
         Index("idx_job_platform_external", "platform", "external_id"),
         Index("idx_job_state_active", "state", "is_active"),
+        Index("idx_job_last_run", "source_id", "last_seen_run_id"),
+        Index("idx_job_removal", "is_active", "removal_detected_at"),
     )

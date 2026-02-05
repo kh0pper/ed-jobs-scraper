@@ -17,6 +17,7 @@ class ScrapeRun(UUIDMixin, Base):
     jobs_found = Column(Integer, default=0)
     jobs_new = Column(Integer, default=0)
     jobs_updated = Column(Integer, default=0)
+    jobs_removed = Column(Integer, default=0)
     error_message = Column(Text)
 
     # Relationships

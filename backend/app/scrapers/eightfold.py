@@ -86,11 +86,11 @@ class EightfoldScraper(BaseScraper):
             "city": raw.get("city"),
             "state": state,
             "department": raw.get("department"),
+            "campus": raw.get("team"),  # Team often indicates campus/school
             "employment_type": raw.get("type"),
             "description": raw.get("description", ""),
             "external_id": raw.get("id"),
             "extra_data": {
                 "requisition_id": raw.get("requisitionId"),
-                "team": raw.get("team"),
             },
         }

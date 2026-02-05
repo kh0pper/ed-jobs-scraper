@@ -21,10 +21,11 @@ class BaseScraper(ABC):
         normalize(raw) -> dict  — convert platform-specific fields to standard schema
     """
 
-    def __init__(self, source: ScrapeSource, db):
+    def __init__(self, source: ScrapeSource, db, run_id: uuid.UUID | None = None):
         self.source = source
         self.db = db
         self.platform = source.platform
+        self.run_id = run_id  # Track current scrape run for removal detection
 
     @abstractmethod
     def scrape(self) -> list[dict]:
@@ -79,10 +80,19 @@ class BaseScraper(ABC):
 
         if existing:
             existing.last_seen_at = now
+            if self.run_id:
+                existing.last_seen_run_id = self.run_id
+
+            # Handle reactivation if job was previously marked removed
+            was_inactive = not existing.is_active
+            if was_inactive:
+                existing.reactivation_count = (existing.reactivation_count or 0) + 1
+                existing.removal_detected_at = None
+
             if existing.content_hash != content_hash:
                 # Content changed — update fields
                 for key in ("title", "location", "city", "state", "category", "raw_category",
-                            "department", "employment_type", "salary_min", "salary_max",
+                            "department", "campus", "employment_type", "salary_min", "salary_max",
                             "salary_text", "closing_date", "description", "requirements"):
                     if key in data and data[key] is not None:
                         setattr(existing, key, data[key])
@@ -109,6 +119,7 @@ class BaseScraper(ABC):
                 category=data.get("category"),
                 raw_category=data.get("raw_category"),
                 department=data.get("department"),
+                campus=data.get("campus"),
                 employment_type=data.get("employment_type"),
                 salary_min=data.get("salary_min"),
                 salary_max=data.get("salary_max"),
@@ -123,6 +134,7 @@ class BaseScraper(ABC):
                 first_seen_at=now,
                 last_seen_at=now,
                 is_active=True,
+                last_seen_run_id=self.run_id,
             )
             self.db.add(posting)
             self.db.commit()
@@ -136,3 +148,35 @@ class BaseScraper(ABC):
     def _hash_content(title: str, description: str) -> str:
         content = f"{title}|{description or ''}"
         return hashlib.sha256(content.encode()).hexdigest()
+
+    def detect_removals(self, run_started_at: datetime) -> int:
+        """Mark jobs not seen in this run as removed.
+
+        Only call this after a successful scrape to avoid false positives.
+
+        Returns:
+            Number of jobs marked as removed.
+        """
+        if not self.run_id:
+            logger.warning(f"[{self.platform}/{self.source.slug}] No run_id, skipping removal detection")
+            return 0
+
+        now = datetime.now(timezone.utc)
+
+        # Find active jobs from this source that weren't seen in this run
+        removed_count = self.db.query(JobPosting).filter(
+            JobPosting.source_id == self.source.id,
+            JobPosting.is_active == True,  # noqa: E712
+            JobPosting.last_seen_run_id != self.run_id,
+            JobPosting.last_seen_at < run_started_at,
+        ).update({
+            "is_active": False,
+            "removal_detected_at": now,
+        }, synchronize_session=False)
+
+        self.db.commit()
+
+        if removed_count > 0:
+            logger.info(f"[{self.platform}/{self.source.slug}] Detected {removed_count} removed jobs")
+
+        return removed_count

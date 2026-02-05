@@ -74,8 +74,11 @@ def scrape_source(source_id: str):
             if not scraper_class:
                 raise ValueError(f"No scraper registered for platform: {source.platform}")
 
-            scraper = scraper_class(source=source, db=db)
+            scraper = scraper_class(source=source, db=db, run_id=run.id)
             results = scraper.run()
+
+            # Detect removed jobs (only on successful scrape)
+            jobs_removed = scraper.detect_removals(run.started_at)
 
             # Update run record
             run.status = "success"
@@ -83,6 +86,7 @@ def scrape_source(source_id: str):
             run.jobs_found = results.get("jobs_found", 0)
             run.jobs_new = results.get("jobs_new", 0)
             run.jobs_updated = results.get("jobs_updated", 0)
+            run.jobs_removed = jobs_removed
 
             # Update source state
             source.last_scraped_at = datetime.now(timezone.utc)
@@ -91,7 +95,7 @@ def scrape_source(source_id: str):
             source.consecutive_failures = 0
 
             db.commit()
-            logger.info(f"Scraped {source.platform}/{source.slug}: {results}")
+            logger.info(f"Scraped {source.platform}/{source.slug}: {results}, removed: {jobs_removed}")
 
         except Exception as e:
             run.status = "failed"

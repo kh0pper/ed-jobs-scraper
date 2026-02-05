@@ -60,4 +60,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.maintenance_tasks.deduplicate_postings",
         "schedule": crontab(minute=30, hour=3),
     },
+    "backfill-job-cities": {
+        "task": "app.tasks.data_quality_tasks.backfill_job_cities",
+        "schedule": crontab(minute=15, hour="*/4"),  # Every 4 hours
+    },
+    "derive-org-cities": {
+        "task": "app.tasks.data_quality_tasks.derive_org_cities",
+        "schedule": crontab(minute=45, hour=6),  # Daily at 6:45 AM
+    },
 }

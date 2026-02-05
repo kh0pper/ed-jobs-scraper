@@ -11,6 +11,7 @@ from app.models.job_posting import JobPosting
 from app.models.scrape_run import ScrapeRun  # noqa: F401
 from app.services.category_normalizer import normalize_category
 from app.services.geocoder import Geocoder
+from app.services.city_resolver import resolve_city_for_job, derive_org_city
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,91 @@ def identify_non_texas_jobs():
                 state: jobs[:3] for state, jobs in by_state.items()
             },
         }
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.data_quality_tasks.backfill_job_cities")
+def backfill_job_cities(batch_size: int = 500):
+    """
+    Derive city for job postings that don't have one.
+
+    Uses the city resolver service to parse from location or inherit from org.
+    Runs periodically to process newly scraped jobs.
+    """
+    db = SyncSessionLocal()
+    try:
+        # Find active jobs without city
+        jobs = db.query(JobPosting).filter(
+            JobPosting.city.is_(None),
+            JobPosting.is_active == True,  # noqa: E712
+        ).limit(batch_size).all()
+
+        if not jobs:
+            logger.info("No jobs need city backfill")
+            return {"processed": 0, "updated": 0}
+
+        updated = 0
+        for job in jobs:
+            # Get the organization for this job
+            org = db.query(Organization).filter(
+                Organization.id == job.organization_id
+            ).first()
+
+            city = resolve_city_for_job(job, org)
+            if city:
+                job.city = city
+                updated += 1
+
+        db.commit()
+        logger.info(f"Backfilled city for {updated} jobs")
+        return {"processed": len(jobs), "updated": updated}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"City backfill failed: {e}")
+        raise
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.data_quality_tasks.derive_org_cities")
+def derive_org_cities(batch_size: int = 500):
+    """
+    Derive city for organizations that don't have one.
+
+    Uses county seat lookup for Texas organizations.
+    """
+    db = SyncSessionLocal()
+    try:
+        # Find orgs without city but with county (for county seat lookup)
+        orgs = db.query(Organization).filter(
+            Organization.city.is_(None),
+            Organization.county.isnot(None),
+        ).limit(batch_size).all()
+
+        if not orgs:
+            logger.info("No organizations need city derivation")
+            return {"processed": 0, "updated": 0}
+
+        updated = 0
+        for org in orgs:
+            city, source = derive_org_city(org)
+            if city:
+                org.city = city
+                org.city_source = source
+                updated += 1
+
+        db.commit()
+        logger.info(f"Derived city for {updated} organizations")
+        return {"processed": len(orgs), "updated": updated}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Org city derivation failed: {e}")
+        raise
 
     finally:
         db.close()

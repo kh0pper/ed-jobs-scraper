@@ -23,6 +23,7 @@ class Organization(UUIDMixin, TimestampMixin, Base):
     esc_region = Column(Integer, index=True)
     county = Column(String(100), index=True)
     city = Column(String(100))
+    city_source = Column(String(20))  # county_seat, manual, geocode
     state = Column(String(2), default="TX")
     website_url = Column(String(500))
 

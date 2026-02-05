@@ -169,6 +169,6 @@ class SchoolSpringScraper(BaseScraper):
             "location": raw.get("location"),
             "city": city,
             "state": state,
-            "department": raw.get("school"),
+            "campus": raw.get("school"),  # School name maps to campus
             "posting_date": posting_date,
         }
