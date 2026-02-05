@@ -15,6 +15,9 @@ import logging
 
 from app.models.base import SyncSessionLocal
 from app.models.organization import Organization
+from app.models.scrape_source import ScrapeSource  # noqa: F401
+from app.models.job_posting import JobPosting  # noqa: F401
+from app.models.scrape_run import ScrapeRun  # noqa: F401
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
