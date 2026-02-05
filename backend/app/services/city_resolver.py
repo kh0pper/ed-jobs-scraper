@@ -27,15 +27,21 @@ _county_seats: dict[str, str] | None = None
 _county_seats_lower: dict[str, str] | None = None  # Case-insensitive lookup
 
 
+def _normalize_county(name: str) -> str:
+    """Normalize county name for matching (lowercase, no spaces)."""
+    return name.lower().replace(" ", "")
+
+
 def _get_county_seats() -> tuple[dict[str, str], dict[str, str]]:
-    """Lazy-load county seats mapping (returns both original and lowercase keyed dicts)."""
+    """Lazy-load county seats mapping (returns both original and normalized keyed dicts)."""
     global _county_seats, _county_seats_lower
     if _county_seats is None:
         if _COUNTY_SEATS_PATH.exists():
             with open(_COUNTY_SEATS_PATH) as f:
                 _county_seats = json.load(f)
-            # Build case-insensitive lookup
-            _county_seats_lower = {k.lower(): v for k, v in _county_seats.items()}
+            # Build normalized lookup (lowercase, no spaces)
+            # Handles "La Salle" vs "LaSalle", "De Witt" vs "DeWitt", etc.
+            _county_seats_lower = {_normalize_county(k): v for k, v in _county_seats.items()}
         else:
             _county_seats = {}
             _county_seats_lower = {}
@@ -43,11 +49,11 @@ def _get_county_seats() -> tuple[dict[str, str], dict[str, str]]:
 
 
 def get_county_seat(county: str) -> str | None:
-    """Get the county seat for a Texas county (case-insensitive)."""
+    """Get the county seat for a Texas county (case-insensitive, space-insensitive)."""
     if not county:
         return None
-    # Normalize: strip "County" suffix if present
-    normalized = county.replace(" County", "").strip().lower()
+    # Normalize: strip "County" suffix if present, then normalize for matching
+    normalized = _normalize_county(county.replace(" County", "").strip())
     _, lower_dict = _get_county_seats()
     return lower_dict.get(normalized)
 
