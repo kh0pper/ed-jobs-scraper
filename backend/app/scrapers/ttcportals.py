@@ -1,6 +1,7 @@
 """TTC Portals scraper (e.g., YES Prep Public Schools).
 
-TTC Portals career pages are JS-rendered.
+TTC Portals career pages are JS-rendered and protected by Cloudflare.
+Uses session warming to bypass bot detection.
 """
 
 import asyncio
@@ -24,10 +25,22 @@ class TtcPortalsScraper(BaseScraper):
         url = self.source.base_url
         logger.info(f"Fetching TTC Portals page: {url}")
 
-        async with get_browser() as browser:
+        async with get_browser(timeout=60000) as browser:
             page = await browser.new_page()
-            await page.goto(url, wait_until="domcontentloaded")
-            await human_delay(2000, 3000)
+
+            # Use session warming to bypass Cloudflare
+            await browser.warm_session(page, url)
+
+            # Check for Cloudflare challenge
+            html = await page.content()
+            if "verify you are human" in html.lower() or "cf-challenge" in html.lower():
+                logger.warning("Cloudflare challenge detected, waiting for resolution...")
+                await human_delay(5000, 10000)
+                html = await page.content()
+
+                if "verify you are human" in html.lower() or "cf-challenge" in html.lower():
+                    logger.error("Cloudflare challenge not resolved after wait")
+                    return []
 
             jobs = []
             listings = await page.query_selector_all(".job-item, .search-result, .opportunity, tr.job-row")
