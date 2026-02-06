@@ -37,6 +37,7 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bvice president\b",
         r"\bcampus leader\b",
         r"\bhead of school\b",
+        r"\bschool leader\b",
         r"\bmanager\b",
         r"\bcoordinator\b(?!.*instructional)",
     ]),
@@ -59,6 +60,12 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bintervention\s+specialist\b",
         r"\b504\s+coordinator\b",
         r"\biep\b",
+        r"\bbcba\b",
+        r"\bbehavior\s+analyst\b",
+        r"\becse\b",
+        r"\bsign\s+language\b.*\binterpreter\b",
+        r"\binterpreter\b.*\bsign\s+language\b",
+        r"\bdeaf\b",
     ]),
 
     # Counselors
@@ -106,11 +113,16 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\blibrarian\b",
         r"\bmedia specialist\b",
         r"\binstructional\s+facilitator\b",
+        r"\bmultilingual\s+(education\s+)?specialist\b",
+        r"\blanguage\s+acquisition\s+specialist\b",
+        r"\besl\s+specialist\b",
+        r"\bbilingual\s+specialist\b",
     ]),
 
     # Teachers
     ("Teacher", [
-        r"\bteacher\b",
+        r"\bteachers?\b",
+        r"\btchr\b",
         r"\binstructor\b",
         r"\beducator\b",
         r"\bfaculty\b",
@@ -129,6 +141,9 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bgrade\s+\d",
         r"\bsubject\b.*\barea\b",
         r"\bcertified\b.*\bposition\b",
+        r"\bgeneric\s*-\s*(art|band|music|spanish|french|esl)\b",
+        r"\bbilingual\b.*\bgrade\b",
+        r"\b\d+(st|nd|rd|th)\s+grade\s+bilingual\b",
     ]),
 
     # Paraprofessionals
@@ -222,6 +237,8 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
     # Custodial/Maintenance
     ("Custodial/Maintenance", [
         r"\bcustodian\b",
+        r"\bcustodians\b",
+        r"\bcustodial\b",
         r"\bjanitor\b",
         r"\bmaintenance\b",
         r"\bgroundskeeper\b",
