@@ -141,7 +141,8 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bgrade\s+\d",
         r"\bsubject\b.*\barea\b",
         r"\bcertified\b.*\bposition\b",
-        r"\bgeneric\s*-\s*(art|band|music|spanish|french|esl)\b",
+        r"\bgeneric\s*-\s*(art|band|music|choir|spanish|french|esl)\b",
+        r"\bcte\b",
         r"\bbilingual\b.*\bgrade\b",
         r"\b\d+(st|nd|rd|th)\s+grade\s+bilingual\b",
     ]),
@@ -156,6 +157,8 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\binstructional\s+aide\b",
         r"\bteacher\s+aide\b",
         r"\bclassroom\s+assistant\b",
+        r"\bchildcare\b",
+        r"\bdaycare\b",
     ]),
 
     # Technology
@@ -171,6 +174,8 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bsoftware\b",
         r"\bdeveloper\b",
         r"\bengineer\b",
+        r"\bprogrammer\b",
+        r"\banalyst\b",
     ]),
 
     # Athletics/Coaching
@@ -191,6 +196,8 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\borchestra\b",
         r"\bfine arts\b",
         r"\bdrama\b",
+        r"\bclub\s+advisor\b",
+        r"\bsponsor\b",
     ]),
 
     # Office/Clerical
