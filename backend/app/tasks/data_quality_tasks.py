@@ -88,14 +88,14 @@ def normalize_job_categories(batch_size: int = 500):
 
 
 @celery_app.task(name="app.tasks.data_quality_tasks.geocode_pending_jobs")
-def geocode_pending_jobs(batch_size: int = 50):
+def geocode_pending_jobs(batch_size: int = 200):
     """
     Geocode job postings that don't have coordinates.
 
-    Limited batch size due to Nominatim rate limits (1 req/sec).
+    Uses local Nominatim instance - no rate limiting needed.
     """
     db = SyncSessionLocal()
-    geocoder = Geocoder(rate_limit=1.0)
+    geocoder = Geocoder(rate_limit=0.1)  # Local instance
 
     try:
         # Find jobs needing geocoding (have city but no coordinates)
@@ -148,12 +148,14 @@ def geocode_pending_jobs(batch_size: int = 50):
 
 
 @celery_app.task(name="app.tasks.data_quality_tasks.geocode_pending_organizations")
-def geocode_pending_organizations(batch_size: int = 50):
+def geocode_pending_organizations(batch_size: int = 100):
     """
     Geocode organizations that don't have coordinates.
+
+    Uses local Nominatim instance - no rate limiting needed.
     """
     db = SyncSessionLocal()
-    geocoder = Geocoder(rate_limit=1.0)
+    geocoder = Geocoder(rate_limit=0.1)  # Local instance
 
     try:
         # Find orgs needing geocoding

@@ -36,15 +36,14 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.scrape_tasks.dispatch_due_scrapes",
         "schedule": crontab(minute="*/30"),
     },
-    # TEMPORARILY DISABLED - Nominatim IP blocked, re-enable after ~12 hours
-    # "geocode-pending-jobs": {
-    #     "task": "app.tasks.data_quality_tasks.geocode_pending_jobs",
-    #     "schedule": crontab(minute="*/15"),  # Every 15min for backlog catch-up
-    # },
-    # "geocode-pending-orgs": {
-    #     "task": "app.tasks.data_quality_tasks.geocode_pending_organizations",
-    #     "schedule": crontab(minute=30, hour="*/4"),
-    # },
+    "geocode-pending-jobs": {
+        "task": "app.tasks.data_quality_tasks.geocode_pending_jobs",
+        "schedule": crontab(minute="*/5"),  # Every 5min with local Nominatim
+    },
+    "geocode-pending-orgs": {
+        "task": "app.tasks.data_quality_tasks.geocode_pending_organizations",
+        "schedule": crontab(minute=15, hour="*/2"),
+    },
     "normalize-job-categories": {
         "task": "app.tasks.data_quality_tasks.normalize_job_categories",
         "schedule": crontab(minute="*/15"),

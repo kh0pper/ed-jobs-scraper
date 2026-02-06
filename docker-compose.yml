@@ -91,6 +91,27 @@ services:
     volumes:
       - edjobs_postgres_data:/var/lib/postgresql/data
 
+  nominatim:
+    image: mediagis/nominatim:4.4
+    container_name: edjobs_nominatim
+    environment:
+      PBF_URL: https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/north-america/us/texas-updates/
+      NOMINATIM_PASSWORD: nominatim_secure_2026
+      IMPORT_STYLE: street
+    volumes:
+      - edjobs_nominatim_data:/var/lib/postgresql/14/main
+    shm_size: 1g
+    mem_limit: 4g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+
 volumes:
   edjobs_redis_data:
   edjobs_postgres_data:
+  edjobs_nominatim_data:

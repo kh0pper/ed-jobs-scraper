@@ -19,10 +19,10 @@ class Settings(BaseSettings):
     # TEA Data
     tea_db_path: str = "/app/data/tea_data.db"
 
-    # Geocoding
+    # Geocoding (local Nominatim via Docker)
     census_geocoder_url: str = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
-    nominatim_url: str = "https://nominatim.openstreetmap.org/search"
-    nominatim_rate_limit: float = 0.5
+    nominatim_url: str = "http://nominatim:8080/search"
+    nominatim_rate_limit: float = 0.1  # Local instance, no rate limit needed
 
     # Scraping
     default_scrape_frequency_minutes: int = 360
