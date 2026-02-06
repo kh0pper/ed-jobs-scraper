@@ -55,6 +55,10 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bcontent mastery\b",
         r"\bself[-\s]?contained\b",
         r"\bresource\b.*\bteacher\b",
+        r"\bard\s+facilitator\b",
+        r"\bintervention\s+specialist\b",
+        r"\b504\s+coordinator\b",
+        r"\biep\b",
     ]),
 
     # Counselors
@@ -78,6 +82,15 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bschool health\b",
         r"\bclinic\b",
         r"\bmedical\b",
+        r"\bspeech.{0,5}language.{0,5}pathologist\b",
+        r"\bslp\b",
+        r"\bspeech.{0,5}pathologist\b",
+        r"\bspeech.{0,5}therapist\b",
+        r"\boccupational\s+therapist\b",
+        r"\bot\b.*\btherapist\b",
+        r"\bphysical\s+therapist\b",
+        r"\bpt\b.*\btherapist\b",
+        r"\basha\b",
     ]),
 
     # Instructional Support (before Teacher)
@@ -122,6 +135,7 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
     ("Paraprofessional", [
         r"\bparaprofessional\b",
         r"\bpara\b",
+        r"\bparaeducator\b",
         r"\baide\b",
         r"\bassistant\b(?!.*principal)(?!.*director)(?!.*manager)",
         r"\binstructional\s+aide\b",
@@ -197,6 +211,7 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
     # Transportation
     ("Transportation", [
         r"\bbus\s+driver\b",
+        r"\bbus\s+drivers\b",
         r"\btransportation\b",
         r"\bdriver\b",
         r"\broute\b.*\bmanager\b",
@@ -210,12 +225,17 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bjanitor\b",
         r"\bmaintenance\b",
         r"\bgroundskeeper\b",
+        r"\bgrounds\s*(wo)?man\b",
+        r"\bgrounds\s+worker\b",
         r"\bfacilities\b",
         r"\boperations\b",
         r"\bhvac\b",
         r"\belectrician\b",
         r"\bplumber\b",
         r"\bcleaning\b",
+        r"\bpainter\b",
+        r"\bcarpenter\b",
+        r"\bwarehouse\b",
     ]),
 
     # Security
@@ -227,6 +247,11 @@ CATEGORY_PATTERNS: Final[list[tuple[str, list[str]]]] = [
         r"\bresource officer\b",
         r"\bcrossing guard\b",
         r"\bmonitor\b",
+        r"\bnoon\s+duty\b",
+        r"\blunch\s+duty\b",
+        r"\bplayground\b.*\bsupervisor\b",
+        r"\bcampus\s+aide\b",
+        r"\bsafety\s+advocate\b",
     ]),
 ]
 
