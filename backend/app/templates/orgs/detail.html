@@ -58,6 +58,111 @@
         </div>
     </div>
 
+    <!-- Demographics Card (if available) -->
+    {% if demographics %}
+    {% set latest = demographics[0] %}
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center">
+                <h2 class="card-title text-xl">District Demographics</h2>
+                <span class="badge badge-ghost">{{ latest.school_year }}</span>
+            </div>
+
+            <!-- Key stats -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                {% if latest.total_students %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">Students</div>
+                    <div class="stat-value text-lg">{{ "{:,}".format(latest.total_students) }}</div>
+                </div>
+                {% endif %}
+                {% if latest.economically_disadvantaged is not none %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">Econ. Disadv.</div>
+                    <div class="stat-value text-lg">{{ "%.1f"|format(latest.economically_disadvantaged) }}%</div>
+                </div>
+                {% endif %}
+                {% if latest.at_risk is not none %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">At-Risk</div>
+                    <div class="stat-value text-lg">{{ "%.1f"|format(latest.at_risk) }}%</div>
+                </div>
+                {% endif %}
+                {% if latest.ell is not none %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">ELL</div>
+                    <div class="stat-value text-lg">{{ "%.1f"|format(latest.ell) }}%</div>
+                </div>
+                {% endif %}
+                {% if latest.special_ed is not none %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">Special Ed</div>
+                    <div class="stat-value text-lg">{{ "%.1f"|format(latest.special_ed) }}%</div>
+                </div>
+                {% endif %}
+                {% if latest.gifted_talented is not none %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">Gifted/Talented</div>
+                    <div class="stat-value text-lg">{{ "%.1f"|format(latest.gifted_talented) }}%</div>
+                </div>
+                {% endif %}
+                {% if latest.homeless is not none %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">Homeless</div>
+                    <div class="stat-value text-lg">{{ "%.1f"|format(latest.homeless) }}%</div>
+                </div>
+                {% endif %}
+                {% if latest.foster_care is not none %}
+                <div class="stat bg-base-200 rounded-lg p-3">
+                    <div class="stat-title text-xs">Foster Care</div>
+                    <div class="stat-value text-lg">{{ "%.1f"|format(latest.foster_care) }}%</div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Year-over-year trend (collapsible) -->
+            {% if demographics | length > 1 %}
+            <div x-data="{ expanded: false }" class="mt-4">
+                <button @click="expanded = !expanded" class="btn btn-ghost btn-sm gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform" :class="expanded && 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                    Year-over-Year Trends ({{ demographics | length }} years)
+                </button>
+                <div x-show="expanded" x-transition class="mt-2 overflow-x-auto">
+                    <table class="table table-xs table-zebra">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Students</th>
+                                <th>Econ. Disadv.</th>
+                                <th>At-Risk</th>
+                                <th>ELL</th>
+                                <th>Special Ed</th>
+                                <th>G/T</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in demographics %}
+                            <tr>
+                                <td>{{ d.school_year }}</td>
+                                <td>{{ "{:,}".format(d.total_students) if d.total_students else '-' }}</td>
+                                <td>{{ "%.1f%%"|format(d.economically_disadvantaged) if d.economically_disadvantaged is not none else '-' }}</td>
+                                <td>{{ "%.1f%%"|format(d.at_risk) if d.at_risk is not none else '-' }}</td>
+                                <td>{{ "%.1f%%"|format(d.ell) if d.ell is not none else '-' }}</td>
+                                <td>{{ "%.1f%%"|format(d.special_ed) if d.special_ed is not none else '-' }}</td>
+                                <td>{{ "%.1f%%"|format(d.gifted_talented) if d.gifted_talented is not none else '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Organization Details & Jobs Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Sidebar: Organization Info -->

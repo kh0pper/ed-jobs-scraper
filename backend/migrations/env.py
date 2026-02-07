@@ -13,6 +13,7 @@ from app.models.organization import Organization  # noqa: F401
 from app.models.scrape_source import ScrapeSource  # noqa: F401
 from app.models.job_posting import JobPosting  # noqa: F401
 from app.models.scrape_run import ScrapeRun  # noqa: F401
+from app.models.district_demographics import DistrictDemographics  # noqa: F401
 
 config = context.config
 

@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Districts - Texas Ed Jobs{% endblock %}
+
+{% block head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+<style>
+    #compare-map { height: 250px; border-radius: 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="compareView()">
+    <!-- Breadcrumb -->
+    <div class="breadcrumbs text-sm">
+        <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/orgs">Districts</a></li>
+            <li>Compare</li>
+        </ul>
+    </div>
+
+    <h1 class="text-2xl font-bold">District Comparison</h1>
+
+    <!-- Map showing highlighted boundaries -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body p-4">
+            <div id="compare-map"></div>
+        </div>
+    </div>
+
+    <!-- Comparison grid -->
+    <div class="grid grid-cols-1 md:grid-cols-{{ orgs_data | length }} gap-4">
+        {% for item in orgs_data %}
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-lg">
+                    <a href="/orgs/{{ item.org.id }}" class="link link-primary">{{ item.org.name }}</a>
+                </h2>
+                <p class="text-sm opacity-60 capitalize">{{ item.org.org_type }}</p>
+
+                <!-- Basic info -->
+                <div class="stats stats-vertical shadow mt-3 w-full">
+                    <div class="stat py-2">
+                        <div class="stat-title text-xs">Active Jobs</div>
+                        <div class="stat-value text-lg text-primary">{{ item.total_jobs }}</div>
+                    </div>
+                    {% if item.org.total_students %}
+                    <div class="stat py-2">
+                        <div class="stat-title text-xs">Students</div>
+                        <div class="stat-value text-lg">{{ "{:,}".format(item.org.total_students) }}</div>
+                    </div>
+                    {% endif %}
+                    {% if item.org.city %}
+                    <div class="stat py-2">
+                        <div class="stat-title text-xs">City</div>
+                        <div class="stat-value text-lg text-sm">{{ item.org.city }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Demographics bars -->
+                {% if item.demographics %}
+                <h3 class="font-semibold text-sm mt-4 mb-2">Demographics ({{ item.demographics.school_year }})</h3>
+                <div class="space-y-2">
+                    {% set demo = item.demographics %}
+                    {% if demo.economically_disadvantaged is not none %}
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span>Econ. Disadv.</span>
+                            <span>{{ "%.1f"|format(demo.economically_disadvantaged) }}%</span>
+                        </div>
+                        <progress class="progress progress-warning w-full" value="{{ demo.economically_disadvantaged }}" max="100"></progress>
+                    </div>
+                    {% endif %}
+                    {% if demo.at_risk is not none %}
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span>At-Risk</span>
+                            <span>{{ "%.1f"|format(demo.at_risk) }}%</span>
+                        </div>
+                        <progress class="progress progress-error w-full" value="{{ demo.at_risk }}" max="100"></progress>
+                    </div>
+                    {% endif %}
+                    {% if demo.ell is not none %}
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span>ELL</span>
+                            <span>{{ "%.1f"|format(demo.ell) }}%</span>
+                        </div>
+                        <progress class="progress progress-info w-full" value="{{ demo.ell }}" max="100"></progress>
+                    </div>
+                    {% endif %}
+                    {% if demo.special_ed is not none %}
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span>Special Ed</span>
+                            <span>{{ "%.1f"|format(demo.special_ed) }}%</span>
+                        </div>
+                        <progress class="progress progress-primary w-full" value="{{ demo.special_ed }}" max="100"></progress>
+                    </div>
+                    {% endif %}
+                    {% if demo.gifted_talented is not none %}
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span>Gifted/Talented</span>
+                            <span>{{ "%.1f"|format(demo.gifted_talented) }}%</span>
+                        </div>
+                        <progress class="progress progress-success w-full" value="{{ demo.gifted_talented }}" max="100"></progress>
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="text-sm opacity-50 mt-4">No demographic data available</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Job category breakdown -->
+    {% if all_categories %}
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-lg">Jobs by Category</h2>
+            <div class="overflow-x-auto mt-2">
+                <table class="table table-sm table-zebra">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            {% for item in orgs_data %}
+                            <th class="text-right">{{ item.org.name }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cat in all_categories %}
+                        <tr>
+                            <td>{{ cat or 'Uncategorized' }}</td>
+                            {% for item in orgs_data %}
+                            <td class="text-right">{{ item.categories.get(cat, 0) }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                        <tr class="font-bold">
+                            <td>Total</td>
+                            {% for item in orgs_data %}
+                            <td class="text-right">{{ item.total_jobs }}</td>
+                            {% endfor %}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="text-center">
+        <a href="/orgs" class="btn btn-ghost">Back to Districts</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+
+<script>
+const COMPARE_TEA_IDS = [
+    {% for item in orgs_data %}
+    '{{ item.org.tea_id or "" }}'{% if not loop.last %},{% endif %}
+    {% endfor %}
+].filter(id => id);
+
+const COMPARE_COLORS = ['#f59e0b', '#6366f1', '#ec4899'];
+
+function compareView() {
+    return {
+        init() {
+            this.$nextTick(() => this.initMap());
+        },
+
+        async initMap() {
+            if (!COMPARE_TEA_IDS.length) return;
+
+            const map = L.map('compare-map').setView([31.0, -100.0], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(map);
+
+            try {
+                const resp = await fetch('/data/boundaries/districts.geojson');
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                const bounds = L.latLngBounds();
+                let found = 0;
+
+                L.geoJSON(data, {
+                    style: function(feature) {
+                        const idx = COMPARE_TEA_IDS.indexOf(feature.properties.tea_id);
+                        if (idx >= 0) {
+                            return {
+                                color: COMPARE_COLORS[idx],
+                                weight: 3,
+                                fillColor: COMPARE_COLORS[idx],
+                                fillOpacity: 0.2,
+                            };
+                        }
+                        return {
+                            color: '#94a3b8',
+                            weight: 0.5,
+                            fillOpacity: 0.02,
+                        };
+                    },
+                    onEachFeature: function(feature, layer) {
+                        const idx = COMPARE_TEA_IDS.indexOf(feature.properties.tea_id);
+                        if (idx >= 0) {
+                            bounds.extend(layer.getBounds());
+                            found++;
+                            layer.bindTooltip(feature.properties.name, { sticky: true });
+                        }
+                    }
+                }).addTo(map);
+
+                if (found > 0) {
+                    map.fitBounds(bounds, { padding: [30, 30] });
+                }
+            } catch (e) {
+                console.error('Failed to load boundaries:', e);
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,66 @@
+{# Bare HTML partial — no {% extends %}, loaded by HTMX into #org-list-content #}
+
+{% if organizations %}
+<!-- Org count -->
+<div class="text-sm text-base-content/60 mb-3 px-1">
+    {{ total }} organization{{ 's' if total != 1 else '' }} found
+</div>
+
+<!-- Org cards -->
+<div class="space-y-3">
+    {% for org in organizations %}
+    <a href="/orgs/{{ org.id }}"
+       class="block card bg-base-100 shadow-sm hover:shadow-md transition-shadow border border-base-200">
+        <div class="card-body p-4">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <h3 class="font-semibold text-sm leading-tight text-primary">{{ org.name }}</h3>
+                    <p class="text-xs text-base-content/60 mt-1 capitalize">{{ org.org_type }}</p>
+                </div>
+                {% if org.active_job_count > 0 %}
+                <span class="badge badge-success badge-sm">{{ org.active_job_count }} jobs</span>
+                {% else %}
+                <span class="badge badge-ghost badge-xs">No jobs</span>
+                {% endif %}
+            </div>
+            <div class="flex flex-wrap gap-1 mt-2">
+                {% if org.city %}
+                <span class="badge badge-ghost badge-xs">{{ org.city }}</span>
+                {% endif %}
+                {% if org.esc_region %}
+                <span class="badge badge-ghost badge-xs">Region {{ org.esc_region }}</span>
+                {% endif %}
+                {% if org.total_students %}
+                <span class="badge badge-ghost badge-xs">{{ "{:,}".format(org.total_students) }} students</span>
+                {% endif %}
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+{% if has_more %}
+<!-- Show more button -->
+<div class="mt-4 text-center">
+    <button class="btn btn-ghost btn-sm"
+            hx-get="{{ more_url }}"
+            hx-target="#org-list-more"
+            hx-swap="outerHTML"
+            hx-indicator="#org-load-more-spinner">
+        Show more
+        <span id="org-load-more-spinner" class="loading loading-spinner loading-xs htmx-indicator"></span>
+    </button>
+    <div id="org-list-more"></div>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Empty state -->
+<div class="flex flex-col items-center justify-center py-12 text-base-content/50">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+    <p class="text-sm font-medium">No organizations found</p>
+    <p class="text-xs mt-1">Try adjusting your filters</p>
+</div>
+{% endif %}

@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import get_db
@@ -219,6 +219,7 @@ async def get_job_markers(
     category: str | None = Query(None, description="Filter by category"),
     platform: str | None = Query(None, description="Filter by platform"),
     city: str | None = Query(None, description="Filter by city"),
+    organization_id: str | None = Query(None, description="Filter by organization ID"),
     limit: int = Query(15000, ge=1, le=15000, description="Maximum markers"),
 ):
     """
@@ -249,6 +250,8 @@ async def get_job_markers(
     if city:
         escaped = _escape_ilike(city)
         query = query.where(JobPosting.city.ilike(f"%{escaped}%"))
+    if organization_id:
+        query = query.where(JobPosting.organization_id == organization_id)
 
     query = query.limit(limit)
     result = await db.execute(query)
@@ -299,6 +302,107 @@ async def get_job_popup(
         "category": row["category"],
         "city": row["city"],
         "detail_url": f"/jobs/{row['id']}",
+    }
+
+
+@router.get("/organizations/markers")
+async def get_org_markers(
+    db: AsyncSession = Depends(get_db),
+    search: str | None = Query(None, description="Search org name"),
+    org_type: str | None = Query(None, description="Filter by org type"),
+    esc_region: int | None = Query(None, description="Filter by ESC region"),
+    platform_status: str | None = Query(None, description="Filter by platform status"),
+):
+    """
+    Compact org marker data for map display.
+    Returns [lat, lng, id, tea_id, active_job_count] tuples.
+    """
+    # Subquery for active job counts
+    job_count_sub = (
+        select(
+            JobPosting.organization_id,
+            func.count(JobPosting.id).label("job_count"),
+        )
+        .where(JobPosting.is_active == True)
+        .group_by(JobPosting.organization_id)
+        .subquery()
+    )
+
+    query = (
+        select(
+            Organization.latitude,
+            Organization.longitude,
+            Organization.id,
+            Organization.tea_id,
+            func.coalesce(job_count_sub.c.job_count, 0).label("active_job_count"),
+        )
+        .outerjoin(job_count_sub, Organization.id == job_count_sub.c.organization_id)
+        .where(Organization.latitude.isnot(None))
+        .where(Organization.longitude.isnot(None))
+    )
+
+    if search:
+        escaped = _escape_ilike(search)
+        query = query.where(Organization.name.ilike(f"%{escaped}%"))
+    if org_type:
+        query = query.where(Organization.org_type == org_type)
+    if esc_region:
+        query = query.where(Organization.esc_region == esc_region)
+    if platform_status:
+        query = query.where(Organization.platform_status == platform_status)
+
+    result = await db.execute(query)
+
+    markers = [
+        [float(row.latitude), float(row.longitude), str(row.id),
+         row.tea_id, int(row.active_job_count)]
+        for row in result
+    ]
+
+    return JSONResponse(
+        content={"markers": markers, "total": len(markers)},
+        headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
+@router.get("/organizations/{org_id}/popup")
+async def get_org_popup(
+    org_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lightweight popup data for an organization marker."""
+    query = (
+        select(
+            Organization.id,
+            Organization.name,
+            Organization.org_type,
+            Organization.city,
+            Organization.total_students,
+            Organization.slug,
+        )
+        .where(Organization.id == org_id)
+    )
+
+    result = await db.execute(query)
+    row = result.mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Get active job count
+    job_count = (await db.execute(
+        select(func.count(JobPosting.id))
+        .where(JobPosting.organization_id == org_id)
+        .where(JobPosting.is_active == True)
+    )).scalar() or 0
+
+    return {
+        "name": row["name"],
+        "org_type": row["org_type"],
+        "city": row["city"],
+        "total_students": row["total_students"],
+        "active_jobs": job_count,
+        "detail_url": f"/orgs/{row['id']}",
     }
 
 

@@ -50,6 +50,18 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
     total_sources = await _get_total_sources(db)
     categories, platforms = await _get_filter_options(db)
 
+    # Orgs with active jobs for the ISD filter dropdown
+    orgs_query = (
+        select(Organization.id, Organization.name, Organization.tea_id)
+        .where(Organization.platform_status == "mapped")
+        .order_by(Organization.name)
+    )
+    orgs_result = await db.execute(orgs_query)
+    organizations = [
+        {"id": str(row.id), "name": row.name, "tea_id": row.tea_id}
+        for row in orgs_result
+    ]
+
     return templates.TemplateResponse(
         "index.html",
         {
@@ -58,6 +70,7 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
             "total_sources": total_sources,
             "categories": categories,
             "platforms": platforms,
+            "organizations": organizations,
         },
     )
 
@@ -71,6 +84,7 @@ async def jobs_partial(
     category: str | None = None,
     city: str | None = None,
     platform: str | None = None,
+    organization_id: str | None = None,
     north: float | None = None,
     south: float | None = None,
     east: float | None = None,
@@ -125,6 +139,9 @@ async def jobs_partial(
     if platform:
         query = query.where(JobPosting.platform == platform)
         count_query = count_query.where(JobPosting.platform == platform)
+    if organization_id:
+        query = query.where(JobPosting.organization_id == organization_id)
+        count_query = count_query.where(JobPosting.organization_id == organization_id)
 
     # Count for the spatial query (what's shown)
     spatial_count_query = query.with_only_columns(func.count())
@@ -163,6 +180,8 @@ async def jobs_partial(
         params["city"] = city
     if platform:
         params["platform"] = platform
+    if organization_id:
+        params["organization_id"] = organization_id
     if has_bbox:
         params["north"] = north
         params["south"] = south
@@ -235,23 +254,45 @@ async def job_detail(request: Request, job_id: UUID, db: AsyncSession = Depends(
 async def orgs_list(
     request: Request,
     db: AsyncSession = Depends(get_db),
+):
+    """Map-centric ISD explorer."""
+    total_orgs = (await db.execute(
+        select(func.count(Organization.id))
+    )).scalar() or 0
+
+    total_sources = await _get_total_sources(db)
+
+    return templates.TemplateResponse(
+        "orgs/list.html",
+        {
+            "request": request,
+            "total_orgs": total_orgs,
+            "total_sources": total_sources,
+        },
+    )
+
+
+@router.get("/orgs/partial", response_class=HTMLResponse)
+async def orgs_partial(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
     search: str | None = None,
     org_type: str | None = None,
     esc_region: int | None = None,
     platform_status: str | None = None,
     page: int = 1,
 ):
-    """Organizations listing page with filters."""
-    limit = 24
+    """HTMX partial returning org card HTML for the org list panel."""
+    limit = 20
     skip = (page - 1) * limit
 
-    # Build query
     query = select(Organization)
     count_query = select(func.count(Organization.id))
 
     if search:
-        query = query.where(Organization.name.ilike(f"%{search}%"))
-        count_query = count_query.where(Organization.name.ilike(f"%{search}%"))
+        escaped = _escape_ilike(search)
+        query = query.where(Organization.name.ilike(f"%{escaped}%"))
+        count_query = count_query.where(Organization.name.ilike(f"%{_escape_ilike(search)}%"))
     if org_type:
         query = query.where(Organization.org_type == org_type)
         count_query = count_query.where(Organization.org_type == org_type)
@@ -261,6 +302,8 @@ async def orgs_list(
     if platform_status:
         query = query.where(Organization.platform_status == platform_status)
         count_query = count_query.where(Organization.platform_status == platform_status)
+
+    total = (await db.execute(count_query)).scalar() or 0
 
     query = query.order_by(Organization.name).offset(skip).limit(limit)
     result = await db.execute(query)
@@ -280,24 +323,22 @@ async def orgs_list(
     else:
         job_counts = {}
 
-    # Add job counts to orgs
     organizations = []
     for org in orgs:
-        org_dict = {
+        organizations.append({
             "id": org.id,
             "name": org.name,
             "org_type": org.org_type,
             "city": org.city,
             "esc_region": org.esc_region,
+            "total_students": org.total_students,
             "active_job_count": job_counts.get(org.id, 0),
-        }
-        organizations.append(org_dict)
+        })
 
-    total = (await db.execute(count_query)).scalar() or 0
-    total_sources = await _get_total_sources(db)
+    has_more = (skip + limit) < total
 
-    # Build pagination query string
-    params = {}
+    # Build "show more" query params
+    params = {"page": page + 1}
     if search:
         params["search"] = search
     if org_type:
@@ -306,25 +347,78 @@ async def orgs_list(
         params["esc_region"] = str(esc_region)
     if platform_status:
         params["platform_status"] = platform_status
-    pagination_query = urlencode(params)
-
-    filters = {
-        "search": search,
-        "org_type": org_type,
-        "esc_region": esc_region,
-        "platform_status": platform_status,
-    }
+    more_url = f"/orgs/partial?{urlencode(params)}"
 
     return templates.TemplateResponse(
-        "orgs/list.html",
+        "partials/org_list.html",
         {
             "request": request,
             "organizations": organizations,
             "total": total,
-            "page": page,
-            "limit": limit,
-            "filters": filters,
-            "pagination_query": pagination_query,
+            "has_more": has_more,
+            "more_url": more_url,
+        },
+    )
+
+
+@router.get("/orgs/compare", response_class=HTMLResponse)
+async def orgs_compare(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    ids: str = Query("", description="Comma-separated org UUIDs"),
+):
+    """Side-by-side district comparison page."""
+    from app.models.district_demographics import DistrictDemographics
+
+    org_ids = [id.strip() for id in ids.split(",") if id.strip()]
+    if len(org_ids) < 2 or len(org_ids) > 3:
+        raise HTTPException(status_code=400, detail="Provide 2-3 organization IDs")
+
+    orgs_data = []
+    all_categories = set()
+
+    for oid in org_ids:
+        org = (await db.execute(
+            select(Organization).where(Organization.id == oid)
+        )).scalar_one_or_none()
+        if not org:
+            raise HTTPException(status_code=404, detail=f"Organization {oid} not found")
+
+        # Latest demographics
+        demo = (await db.execute(
+            select(DistrictDemographics)
+            .where(DistrictDemographics.organization_id == oid)
+            .order_by(DistrictDemographics.school_year.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+
+        # Job counts by category
+        cat_result = await db.execute(
+            select(JobPosting.category, func.count(JobPosting.id).label("count"))
+            .where(JobPosting.organization_id == oid)
+            .where(JobPosting.is_active == True)
+            .group_by(JobPosting.category)
+            .order_by(func.count(JobPosting.id).desc())
+        )
+        categories = {row.category: row.count for row in cat_result}
+        all_categories.update(categories.keys())
+
+        orgs_data.append({
+            "org": org,
+            "demographics": demo,
+            "categories": categories,
+            "total_jobs": sum(categories.values()),
+        })
+
+    total_sources = await _get_total_sources(db)
+
+    return templates.TemplateResponse(
+        "orgs/compare.html",
+        {
+            "request": request,
+            "orgs_data": orgs_data,
+            "all_categories": sorted(all_categories),
+            "ids": ids,
             "total_sources": total_sources,
         },
     )
@@ -333,6 +427,8 @@ async def orgs_list(
 @router.get("/orgs/{org_id}", response_class=HTMLResponse)
 async def org_detail(request: Request, org_id: UUID, db: AsyncSession = Depends(get_db)):
     """Single organization detail page."""
+    from app.models.district_demographics import DistrictDemographics
+
     # Get organization with counts
     org_query = select(Organization).where(Organization.id == org_id)
     org_result = await db.execute(org_query)
@@ -374,6 +470,15 @@ async def org_detail(request: Request, org_id: UUID, db: AsyncSession = Depends(
     jobs_result = await db.execute(jobs_query)
     jobs = jobs_result.scalars().all()
 
+    # Get demographics (most recent year)
+    demographics_query = (
+        select(DistrictDemographics)
+        .where(DistrictDemographics.organization_id == org_id)
+        .order_by(DistrictDemographics.school_year.desc())
+    )
+    demographics_result = await db.execute(demographics_query)
+    demographics = demographics_result.scalars().all()
+
     total_sources = await _get_total_sources(db)
 
     # Build org with stats
@@ -403,6 +508,7 @@ async def org_detail(request: Request, org_id: UUID, db: AsyncSession = Depends(
             "sources": sources,
             "jobs": jobs,
             "job_count": job_count,
+            "demographics": demographics,
             "total_sources": total_sources,
         },
     )

@@ -1,128 +1,551 @@
 {% extends "base.html" %}
 
-{% block title %}Organizations - Texas Ed Jobs{% endblock %}
+{% block title %}Districts - Texas Ed Jobs{% endblock %}
+
+{% block main_class %}flex-grow{% endblock %}
+
+{% block head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+
+<style>
+    .split-container {
+        height: calc(100vh - 64px - 52px);
+    }
+    #org-panel {
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+    #org-panel::-webkit-scrollbar {
+        width: 6px;
+    }
+    #org-panel::-webkit-scrollbar-thumb {
+        background: oklch(var(--bc) / 0.2);
+        border-radius: 3px;
+    }
+    .leaflet-popup-content {
+        min-width: 200px;
+        max-width: 280px;
+        margin: 8px 12px;
+    }
+    .org-popup-title {
+        font-weight: 600;
+        font-size: 0.875rem;
+        line-height: 1.3;
+        margin-bottom: 4px;
+    }
+    .org-popup-meta {
+        color: oklch(var(--bc) / 0.6);
+        font-size: 0.75rem;
+        margin-bottom: 6px;
+    }
+    .org-popup-link {
+        display: inline-block;
+        background: oklch(var(--p));
+        color: oklch(var(--pc));
+        padding: 4px 12px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .org-popup-link:hover { opacity: 0.9; }
+    .map-loading-overlay {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 1000;
+        background: oklch(var(--b1));
+        border-radius: 8px;
+        padding: 6px 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        font-size: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .mobile-toggle {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1100;
+    }
+    @media (min-width: 1024px) {
+        [data-mode="map"] footer { display: none; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-            <h1 class="text-3xl font-bold">Organizations</h1>
-            <p class="text-base-content/70">{{ total }} organizations found</p>
-        </div>
-    </div>
+<div x-data="orgExplorer()" x-init="init()" :data-mode="mode" class="flex flex-col">
 
-    <!-- Filters -->
-    <div class="card bg-base-100 shadow-xl">
-        <div class="card-body">
-            <form action="/orgs" method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Search</span>
-                    </label>
-                    <input type="text" name="search" value="{{ filters.search | default('') }}"
-                           placeholder="Organization name..."
-                           class="input input-bordered w-full">
-                </div>
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Type</span>
-                    </label>
-                    <select name="org_type" class="select select-bordered w-full">
-                        <option value="">All Types</option>
-                        <option value="isd" {% if filters.org_type == 'isd' %}selected{% endif %}>ISD</option>
-                        <option value="charter" {% if filters.org_type == 'charter' %}selected{% endif %}>Charter</option>
-                        <option value="esc" {% if filters.org_type == 'esc' %}selected{% endif %}>ESC</option>
-                        <option value="nonprofit" {% if filters.org_type == 'nonprofit' %}selected{% endif %}>Nonprofit</option>
-                        <option value="state_agency" {% if filters.org_type == 'state_agency' %}selected{% endif %}>State Agency</option>
-                        <option value="higher_ed" {% if filters.org_type == 'higher_ed' %}selected{% endif %}>Higher Ed</option>
-                    </select>
-                </div>
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">ESC Region</span>
-                    </label>
-                    <select name="esc_region" class="select select-bordered w-full">
-                        <option value="">All Regions</option>
-                        {% for i in range(1, 21) %}
-                        <option value="{{ i }}" {% if filters.esc_region == i %}selected{% endif %}>Region {{ i }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Status</span>
-                    </label>
-                    <select name="platform_status" class="select select-bordered w-full">
-                        <option value="">All</option>
-                        <option value="mapped" {% if filters.platform_status == 'mapped' %}selected{% endif %}>With Jobs</option>
-                        <option value="unmapped" {% if filters.platform_status == 'unmapped' %}selected{% endif %}>Unmapped</option>
-                    </select>
-                </div>
-                <div class="md:col-span-4 flex justify-end gap-2">
-                    <a href="/orgs" class="btn btn-ghost">Clear</a>
-                    <button type="submit" class="btn btn-primary">Apply Filters</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <!-- Filter bar -->
+    <div class="bg-base-100 border-b border-base-200 px-3 py-2 flex flex-wrap items-center gap-2">
+        <!-- Search input -->
+        <input type="text"
+               x-model="filters.search"
+               @input.debounce.400ms="onFilterChange()"
+               placeholder="Search districts..."
+               class="input input-bordered input-sm w-40 lg:w-56">
 
-    <!-- Organization List -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {% for org in organizations %}
-        <a href="/orgs/{{ org.id }}" class="card bg-base-100 shadow hover:shadow-lg transition-shadow">
-            <div class="card-body">
-                <h3 class="card-title text-primary">{{ org.name }}</h3>
-                <p class="text-sm opacity-70 capitalize">{{ org.org_type }}</p>
-                <div class="flex justify-between items-end mt-4">
-                    <div class="text-sm opacity-60">
-                        {% if org.city %}
-                        <p>{{ org.city }}, TX</p>
-                        {% endif %}
-                        {% if org.esc_region %}
-                        <p>Region {{ org.esc_region }}</p>
-                        {% endif %}
-                    </div>
-                    <div class="text-right">
-                        {% if org.active_job_count > 0 %}
-                        <p class="text-2xl font-bold text-success">{{ org.active_job_count }}</p>
-                        <p class="text-xs opacity-60">active jobs</p>
-                        {% else %}
-                        <span class="badge badge-ghost">No jobs</span>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </a>
-        {% else %}
-        <div class="col-span-full alert">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        <!-- Type dropdown -->
+        <select x-model="filters.org_type"
+                @change="onFilterChange()"
+                class="select select-bordered select-sm w-28 lg:w-36">
+            <option value="">All Types</option>
+            <option value="isd">ISD</option>
+            <option value="charter">Charter</option>
+            <option value="esc">ESC</option>
+            <option value="nonprofit">Nonprofit</option>
+            <option value="state_agency">State Agency</option>
+            <option value="higher_ed">Higher Ed</option>
+        </select>
+
+        <!-- Region dropdown -->
+        <select x-model="filters.esc_region"
+                @change="onFilterChange()"
+                class="select select-bordered select-sm w-28 lg:w-36">
+            <option value="">All Regions</option>
+            {% for i in range(1, 21) %}
+            <option value="{{ i }}">Region {{ i }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Status dropdown -->
+        <select x-model="filters.platform_status"
+                @change="onFilterChange()"
+                class="select select-bordered select-sm w-28 lg:w-36">
+            <option value="">All</option>
+            <option value="mapped">With Jobs</option>
+            <option value="unmapped">Unmapped</option>
+        </select>
+
+        <!-- Clear filters -->
+        <button @click="clearFilters()"
+                x-show="filters.search || filters.org_type || filters.esc_region || filters.platform_status"
+                class="btn btn-ghost btn-xs">
+            Clear
+        </button>
+
+        <!-- Districts toggle (map mode only) -->
+        <button @click="toggleBoundaries()"
+                x-show="mode === 'map'"
+                :class="boundariesVisible ? 'btn-primary' : 'btn-ghost'"
+                class="btn btn-xs gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
             </svg>
-            <span>No organizations found matching your criteria.</span>
-        </div>
-        {% endfor %}
-    </div>
+            Boundaries
+        </button>
 
-    <!-- Pagination -->
-    {% if total > limit %}
-    <div class="flex justify-center">
+        <!-- Spacer -->
+        <div class="flex-1"></div>
+
+        <!-- Org count -->
+        <span class="text-xs text-base-content/50 hidden sm:inline" x-text="orgCountText"></span>
+
+        <!-- Compare button -->
+        <button x-show="compareIds.length >= 2"
+                @click="goCompare()"
+                class="btn btn-secondary btn-xs gap-1">
+            Compare (<span x-text="compareIds.length"></span>)
+        </button>
+
+        <!-- Mode toggle -->
         <div class="join">
-            {% if page > 1 %}
-            <a href="/orgs?{{ pagination_query }}&page={{ page - 1 }}" class="join-item btn">Previous</a>
-            {% else %}
-            <button class="join-item btn btn-disabled">Previous</button>
-            {% endif %}
-
-            <button class="join-item btn btn-disabled">Page {{ page }} of {{ ((total - 1) // limit) + 1 }}</button>
-
-            {% if page * limit < total %}
-            <a href="/orgs?{{ pagination_query }}&page={{ page + 1 }}" class="join-item btn">Next</a>
-            {% else %}
-            <button class="join-item btn btn-disabled">Next</button>
-            {% endif %}
+            <button @click="setMode('list')"
+                    :class="mode === 'list' ? 'btn-primary' : 'btn-ghost'"
+                    class="btn btn-xs join-item">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+                List
+            </button>
+            <button @click="setMode('map')"
+                    :class="mode === 'map' ? 'btn-primary' : 'btn-ghost'"
+                    class="btn btn-xs join-item">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+                Map
+            </button>
         </div>
     </div>
-    {% endif %}
+
+    <!-- Split container -->
+    <div class="split-container flex" :class="mode === 'list' ? 'flex-col' : ''">
+        <!-- Org list panel -->
+        <div id="org-panel"
+             :class="mode === 'map'
+                 ? 'w-[420px] shrink-0 border-r border-base-200 p-3 hidden lg:block'
+                 : 'flex-1 max-w-5xl mx-auto w-full p-4 lg:p-6'"
+             :style="mode === 'map' ? 'height: 100%' : ''">
+
+            <div x-show="loading" class="flex justify-center py-12">
+                <span class="loading loading-spinner loading-md text-primary"></span>
+            </div>
+
+            <div id="org-list-content" x-show="!loading"></div>
+        </div>
+
+        <!-- Map panel -->
+        <div x-show="mode === 'map'"
+             class="flex-1 relative"
+             x-transition:enter="transition-opacity duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100">
+            <div id="org-map" class="w-full h-full"></div>
+
+            <div x-show="markersLoading" class="map-loading-overlay">
+                <span class="loading loading-spinner loading-xs"></span>
+                Loading...
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile floating toggle -->
+    <div class="mobile-toggle lg:hidden" x-show="mode === 'map'">
+        <button @click="setMode('list')"
+                class="btn btn-primary btn-sm shadow-lg gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            Show List
+        </button>
+    </div>
+    <div class="mobile-toggle lg:hidden" x-show="mode === 'list'">
+        <button @click="setMode('map')"
+                class="btn btn-primary btn-sm shadow-lg gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+            Show Map
+        </button>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+
+<script>
+function orgExplorer() {
+    return {
+        mode: 'map',
+        filters: { search: '', org_type: '', esc_region: '', platform_status: '' },
+        loading: true,
+        markersLoading: false,
+        totalCount: {{ total_orgs }},
+        map: null,
+        markersLayer: null,
+        markersFilterKey: '',
+        popupCache: new Map(),
+
+        // Boundary layer
+        boundaryLayer: null,
+        boundaryData: null,
+        boundariesVisible: false,
+        _orgJobCounts: null, // tea_id -> job count for choropleth
+
+        // Compare selection
+        compareIds: [],
+
+        get orgCountText() {
+            return `${this.totalCount} districts`;
+        },
+
+        _currentFilterKey() {
+            return [
+                this.filters.search,
+                this.filters.org_type,
+                this.filters.esc_region,
+                this.filters.platform_status
+            ].join('|');
+        },
+
+        init() {
+            this.$nextTick(() => {
+                if (this.mode === 'map') {
+                    this.initMap();
+                }
+                this.fetchOrgs();
+            });
+        },
+
+        initMap() {
+            if (this.map) return;
+
+            this.map = L.map('org-map').setView([31.0, -100.0], 6);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }).addTo(this.map);
+
+            this.markersLayer = L.layerGroup().addTo(this.map);
+
+            this.fetchMarkers();
+            // Auto-show boundaries on org explorer
+            this.loadBoundariesThen();
+        },
+
+        setMode(newMode) {
+            if (this.mode === newMode) return;
+            this.mode = newMode;
+
+            if (newMode === 'map') {
+                this.$nextTick(() => {
+                    if (!this.map) {
+                        this.initMap();
+                    } else {
+                        this.map.invalidateSize();
+                    }
+                });
+            }
+        },
+
+        onFilterChange() {
+            this.fetchOrgs();
+            if (this.mode === 'map' && this.map) {
+                this.fetchMarkers();
+            }
+        },
+
+        clearFilters() {
+            this.filters = { search: '', org_type: '', esc_region: '', platform_status: '' };
+            this.onFilterChange();
+        },
+
+        fetchOrgs() {
+            this.loading = true;
+            const p = new URLSearchParams();
+            p.set('page', '1');
+            if (this.filters.search) p.set('search', this.filters.search);
+            if (this.filters.org_type) p.set('org_type', this.filters.org_type);
+            if (this.filters.esc_region) p.set('esc_region', this.filters.esc_region);
+            if (this.filters.platform_status) p.set('platform_status', this.filters.platform_status);
+
+            htmx.ajax('GET', `/orgs/partial?${p.toString()}`, {
+                target: '#org-list-content',
+                swap: 'innerHTML'
+            }).then(() => {
+                this.loading = false;
+            });
+        },
+
+        async fetchMarkers() {
+            const key = this._currentFilterKey();
+            if (key === this.markersFilterKey) return;
+
+            this.markersLoading = true;
+
+            const p = new URLSearchParams();
+            if (this.filters.search) p.set('search', this.filters.search);
+            if (this.filters.org_type) p.set('org_type', this.filters.org_type);
+            if (this.filters.esc_region) p.set('esc_region', this.filters.esc_region);
+            if (this.filters.platform_status) p.set('platform_status', this.filters.platform_status);
+
+            try {
+                const resp = await fetch(`/api/v1/geo/organizations/markers?${p.toString()}`);
+                const data = await resp.json();
+
+                this.markersLayer.clearLayers();
+                this.popupCache.clear();
+
+                // Build job count map for choropleth
+                this._orgJobCounts = {};
+                for (const m of data.markers) {
+                    // m = [lat, lng, id, tea_id, active_job_count]
+                    if (m[3]) { // has tea_id
+                        this._orgJobCounts[m[3]] = (this._orgJobCounts[m[3]] || 0) + m[4];
+                    }
+
+                    const marker = L.circleMarker([m[0], m[1]], {
+                        radius: Math.max(4, Math.min(12, 4 + Math.sqrt(m[4]))),
+                        fillColor: m[4] > 0 ? '#22c55e' : '#94a3b8',
+                        color: '#fff',
+                        weight: 1,
+                        fillOpacity: 0.8,
+                    });
+                    marker._orgId = m[2];
+                    marker.bindPopup('<div class="flex justify-center py-2"><span class="loading loading-spinner loading-xs"></span></div>');
+                    marker.on('click', () => this._loadPopup(marker));
+                    this.markersLayer.addLayer(marker);
+                }
+
+                this.markersFilterKey = key;
+                this.totalCount = data.total;
+
+                // Update choropleth if boundaries visible
+                if (this.boundariesVisible && this.boundaryLayer) {
+                    this._applyChoropleth();
+                }
+            } catch (e) {
+                console.error('Failed to load org markers:', e);
+            } finally {
+                this.markersLoading = false;
+            }
+        },
+
+        async _loadPopup(marker) {
+            const orgId = marker._orgId;
+            if (this.popupCache.has(orgId)) {
+                marker.setPopupContent(this._buildPopupHtml(this.popupCache.get(orgId)));
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/v1/geo/organizations/${orgId}/popup`);
+                if (!resp.ok) throw new Error('Not found');
+                const data = await resp.json();
+                this.popupCache.set(orgId, data);
+                marker.setPopupContent(this._buildPopupHtml(data));
+            } catch (e) {
+                marker.setPopupContent('<div class="text-xs text-error">Could not load details</div>');
+            }
+        },
+
+        _buildPopupHtml(data) {
+            const students = data.total_students ? `${data.total_students.toLocaleString()} students` : '';
+            return `
+                <div>
+                    <div class="org-popup-title">${this.escapeHtml(data.name)}</div>
+                    <div class="org-popup-meta">
+                        <span style="text-transform:capitalize">${this.escapeHtml(data.org_type)}</span>
+                        ${data.city ? ` &middot; ${this.escapeHtml(data.city)}` : ''}
+                        ${students ? ` &middot; ${students}` : ''}
+                    </div>
+                    <div class="org-popup-meta">
+                        <strong>${data.active_jobs}</strong> active job${data.active_jobs !== 1 ? 's' : ''}
+                    </div>
+                    <a href="${this.escapeHtml(data.detail_url)}" class="org-popup-link">View Details</a>
+                </div>
+            `;
+        },
+
+        // --- Boundary layer ---
+
+        async loadBoundariesThen(callback) {
+            if (this.boundaryData) {
+                if (!this.boundariesVisible) this.showBoundaries();
+                if (callback) callback();
+                return;
+            }
+
+            try {
+                const resp = await fetch('/data/boundaries/districts.geojson');
+                if (!resp.ok) return;
+                this.boundaryData = await resp.json();
+                this.showBoundaries();
+                if (callback) callback();
+            } catch (e) {
+                console.error('Failed to load boundaries:', e);
+            }
+        },
+
+        toggleBoundaries() {
+            if (this.boundariesVisible) {
+                this.hideBoundaries();
+            } else {
+                this.loadBoundariesThen();
+            }
+        },
+
+        _getChoroplethColor(jobCount) {
+            if (!jobCount || jobCount === 0) return '#e2e8f0';  // gray-200
+            if (jobCount < 5) return '#bbf7d0';    // green-200
+            if (jobCount < 20) return '#86efac';   // green-300
+            if (jobCount < 50) return '#4ade80';   // green-400
+            if (jobCount < 100) return '#22c55e';  // green-500
+            return '#16a34a';                       // green-600
+        },
+
+        showBoundaries() {
+            if (this.boundaryLayer) {
+                this.map.addLayer(this.boundaryLayer);
+                this.boundariesVisible = true;
+                return;
+            }
+            if (!this.boundaryData) return;
+
+            const self = this;
+            this.boundaryLayer = L.geoJSON(this.boundaryData, {
+                style: function(feature) {
+                    const teaId = feature.properties.tea_id;
+                    const jobCount = (self._orgJobCounts && self._orgJobCounts[teaId]) || 0;
+                    return {
+                        color: '#6366f1',
+                        weight: 1,
+                        fillColor: self._getChoroplethColor(jobCount),
+                        fillOpacity: 0.4,
+                    };
+                },
+                onEachFeature: function(feature, layer) {
+                    const props = feature.properties;
+                    const jobCount = (self._orgJobCounts && self._orgJobCounts[props.tea_id]) || 0;
+                    layer.bindTooltip(
+                        `${props.name || 'Unknown'} (${jobCount} jobs)`,
+                        { sticky: true, className: 'text-xs' }
+                    );
+                }
+            });
+            this.boundaryLayer.addTo(this.map);
+            this.boundariesVisible = true;
+        },
+
+        hideBoundaries() {
+            if (this.boundaryLayer && this.map.hasLayer(this.boundaryLayer)) {
+                this.map.removeLayer(this.boundaryLayer);
+            }
+            this.boundariesVisible = false;
+        },
+
+        _applyChoropleth() {
+            if (!this.boundaryLayer) return;
+            const self = this;
+            this.boundaryLayer.eachLayer(layer => {
+                if (layer.feature) {
+                    const teaId = layer.feature.properties.tea_id;
+                    const jobCount = (self._orgJobCounts && self._orgJobCounts[teaId]) || 0;
+                    layer.setStyle({
+                        fillColor: self._getChoroplethColor(jobCount),
+                    });
+                    layer.setTooltipContent(
+                        `${layer.feature.properties.name || 'Unknown'} (${jobCount} jobs)`
+                    );
+                }
+            });
+        },
+
+        // --- Compare ---
+
+        toggleCompare(orgId) {
+            const idx = this.compareIds.indexOf(orgId);
+            if (idx >= 0) {
+                this.compareIds.splice(idx, 1);
+            } else if (this.compareIds.length < 3) {
+                this.compareIds.push(orgId);
+            }
+        },
+
+        goCompare() {
+            if (this.compareIds.length >= 2) {
+                window.location.href = `/orgs/compare?ids=${this.compareIds.join(',')}`;
+            }
+        },
+
+        escapeHtml(text) {
+            if (!text) return '';
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+    };
+}
+</script>
 {% endblock %}

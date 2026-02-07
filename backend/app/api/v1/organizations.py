@@ -142,6 +142,129 @@ async def get_organization_sources(
     return result.scalars().all()
 
 
+@router.get("/compare")
+async def compare_organizations(
+    db: AsyncSession = Depends(get_db),
+    ids: str = Query(..., description="Comma-separated org UUIDs (2-3)"),
+):
+    """Compare 2-3 organizations: demographics + job counts by category."""
+    from app.models.district_demographics import DistrictDemographics
+
+    org_ids = [id.strip() for id in ids.split(",") if id.strip()]
+    if len(org_ids) < 2 or len(org_ids) > 3:
+        raise HTTPException(status_code=400, detail="Provide 2-3 organization IDs")
+
+    results = []
+    for oid in org_ids:
+        # Get org info
+        org = (await db.execute(
+            select(Organization).where(Organization.id == oid)
+        )).scalar_one_or_none()
+        if not org:
+            raise HTTPException(status_code=404, detail=f"Organization {oid} not found")
+
+        # Latest demographics
+        demo = (await db.execute(
+            select(DistrictDemographics)
+            .where(DistrictDemographics.organization_id == oid)
+            .order_by(DistrictDemographics.school_year.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+
+        # Job counts by category
+        cat_query = (
+            select(JobPosting.category, func.count(JobPosting.id).label("count"))
+            .where(JobPosting.organization_id == oid)
+            .where(JobPosting.is_active == True)
+            .group_by(JobPosting.category)
+            .order_by(func.count(JobPosting.id).desc())
+        )
+        cat_result = await db.execute(cat_query)
+        categories = {row.category: row.count for row in cat_result}
+
+        total_jobs = sum(categories.values())
+
+        org_data = {
+            "id": str(org.id),
+            "name": org.name,
+            "org_type": org.org_type,
+            "city": org.city,
+            "tea_id": org.tea_id,
+            "total_students": org.total_students,
+            "total_active_jobs": total_jobs,
+            "job_categories": categories,
+        }
+
+        if demo:
+            org_data["demographics"] = {
+                "school_year": demo.school_year,
+                "total_students": demo.total_students,
+                "economically_disadvantaged": demo.economically_disadvantaged,
+                "at_risk": demo.at_risk,
+                "ell": demo.ell,
+                "special_ed": demo.special_ed,
+                "gifted_talented": demo.gifted_talented,
+                "homeless": demo.homeless,
+                "foster_care": demo.foster_care,
+            }
+
+        results.append(org_data)
+
+    return results
+
+
+@router.get("/{org_id}/demographics")
+async def get_organization_demographics(
+    org_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get demographics for an organization (all school years, most recent first)."""
+    from app.models.district_demographics import DistrictDemographics
+
+    # Verify org exists
+    org_query = select(Organization.id).where(Organization.id == org_id)
+    org_result = await db.execute(org_query)
+    if not org_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    query = (
+        select(DistrictDemographics)
+        .where(DistrictDemographics.organization_id == org_id)
+        .order_by(DistrictDemographics.school_year.desc())
+    )
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    return [
+        {
+            "school_year": r.school_year,
+            "total_students": r.total_students,
+            "economically_disadvantaged": r.economically_disadvantaged,
+            "at_risk": r.at_risk,
+            "ell": r.ell,
+            "special_ed": r.special_ed,
+            "gifted_talented": r.gifted_talented,
+            "homeless": r.homeless,
+            "foster_care": r.foster_care,
+            "economically_disadvantaged_count": r.economically_disadvantaged_count,
+            "at_risk_count": r.at_risk_count,
+            "ell_count": r.ell_count,
+            "special_ed_count": r.special_ed_count,
+            "gifted_talented_count": r.gifted_talented_count,
+            "homeless_count": r.homeless_count,
+            "foster_care_count": r.foster_care_count,
+            "bilingual_count": r.bilingual_count,
+            "esl_count": r.esl_count,
+            "dyslexic_count": r.dyslexic_count,
+            "military_connected_count": r.military_connected_count,
+            "section_504_count": r.section_504_count,
+            "title_i_count": r.title_i_count,
+            "migrant_count": r.migrant_count,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/{org_id}/jobs", response_model=list[JobPostingSummary])
 async def get_organization_jobs(
     org_id: UUID,

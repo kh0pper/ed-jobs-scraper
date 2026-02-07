@@ -123,12 +123,49 @@
     @media (min-width: 1024px) {
         [data-mode="map"] footer { display: none; }
     }
+
+    /* ISD search dropdown */
+    .org-dropdown {
+        position: relative;
+    }
+    .org-dropdown-list {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 1200;
+        background: oklch(var(--b1));
+        border: 1px solid oklch(var(--bc) / 0.2);
+        border-radius: 8px;
+        max-height: 300px;
+        overflow-y: auto;
+        width: 280px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        scrollbar-width: thin;
+    }
+    .org-dropdown-list button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 6px 12px;
+        font-size: 0.8125rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+    }
+    .org-dropdown-list button:hover {
+        background: oklch(var(--p) / 0.1);
+    }
+    .org-dropdown-list button.active {
+        background: oklch(var(--p) / 0.15);
+        font-weight: 600;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div x-data="jobSearch()" x-init="init()" :data-mode="mode"
      @jobs-loaded.window="onJobsLoaded($event.detail)"
+     @click.away="orgDropdownOpen = false"
      class="flex flex-col">
 
     <!-- Filter bar -->
@@ -150,6 +187,29 @@
             {% endfor %}
         </select>
 
+        <!-- ISD / Organization searchable dropdown -->
+        <div class="org-dropdown" @click.away="orgDropdownOpen = false">
+            <input type="text"
+                   x-model="orgSearchText"
+                   @focus="orgDropdownOpen = true"
+                   @input.debounce.200ms="orgDropdownOpen = true"
+                   :placeholder="selectedOrgName || 'District...'"
+                   :class="filters.organization_id ? 'input-primary' : ''"
+                   class="input input-bordered input-sm w-36 lg:w-48">
+            <div x-show="orgDropdownOpen" x-transition class="org-dropdown-list">
+                <button @click="selectOrg('', ''); orgDropdownOpen = false"
+                        :class="!filters.organization_id && 'active'">
+                    All Districts
+                </button>
+                <template x-for="org in filteredOrgs" :key="org.id">
+                    <button @click="selectOrg(org.id, org.name, org.tea_id); orgDropdownOpen = false"
+                            :class="filters.organization_id === org.id && 'active'"
+                            x-text="org.name">
+                    </button>
+                </template>
+            </div>
+        </div>
+
         <!-- City input -->
         <input type="text"
                x-model="filters.city"
@@ -169,9 +229,20 @@
 
         <!-- Clear filters -->
         <button @click="clearFilters()"
-                x-show="filters.search || filters.category || filters.city || filters.platform"
+                x-show="filters.search || filters.category || filters.city || filters.platform || filters.organization_id"
                 class="btn btn-ghost btn-xs">
             Clear
+        </button>
+
+        <!-- Districts toggle (map mode only) -->
+        <button @click="toggleBoundaries()"
+                x-show="mode === 'map'"
+                :class="boundariesVisible ? 'btn-primary' : 'btn-ghost'"
+                class="btn btn-xs gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+            Districts
         </button>
 
         <!-- Near Me (map mode only) -->
@@ -278,10 +349,13 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
 <script>
+// Organization data for ISD filter dropdown (passed from backend)
+const ALL_ORGS = {{ organizations | tojson }};
+
 function jobSearch() {
     return {
         mode: 'map',
-        filters: { search: '', category: '', city: '', platform: '' },
+        filters: { search: '', category: '', city: '', platform: '', organization_id: '' },
         bounds: null,
         mapCenter: { lat: 31.0, lng: -100.0, zoom: 6 },
         loading: true,
@@ -296,6 +370,23 @@ function jobSearch() {
         popupCache: new Map(),
         _moveendTimer: null,
 
+        // Boundary layer state
+        boundaryLayer: null,
+        boundaryData: null,
+        boundariesVisible: false,
+        _highlightedTeaId: null,
+
+        // Org dropdown state
+        orgDropdownOpen: false,
+        orgSearchText: '',
+        selectedOrgName: '',
+
+        get filteredOrgs() {
+            const q = this.orgSearchText.toLowerCase().trim();
+            if (!q) return ALL_ORGS;
+            return ALL_ORGS.filter(o => o.name.toLowerCase().includes(q));
+        },
+
         get jobCountText() {
             if (this.mode === 'map') {
                 return `${this.shownCount} of ${this.totalCount} jobs`;
@@ -308,7 +399,8 @@ function jobSearch() {
                 this.filters.search,
                 this.filters.category,
                 this.filters.city,
-                this.filters.platform
+                this.filters.platform,
+                this.filters.organization_id
             ].join('|');
         },
 
@@ -331,6 +423,16 @@ function jobSearch() {
             this.filters.category = params.get('category') || '';
             this.filters.city = params.get('city') || '';
             this.filters.platform = params.get('platform') || '';
+            this.filters.organization_id = params.get('organization_id') || '';
+
+            // Restore org name from URL
+            if (this.filters.organization_id) {
+                const org = ALL_ORGS.find(o => o.id === this.filters.organization_id);
+                if (org) {
+                    this.selectedOrgName = org.name;
+                    this.orgSearchText = '';
+                }
+            }
 
             if (params.get('lat') && params.get('lng') && params.get('z')) {
                 this.mapCenter = {
@@ -348,6 +450,7 @@ function jobSearch() {
             if (this.filters.category) params.set('category', this.filters.category);
             if (this.filters.city) params.set('city', this.filters.city);
             if (this.filters.platform) params.set('platform', this.filters.platform);
+            if (this.filters.organization_id) params.set('organization_id', this.filters.organization_id);
 
             if (this.mode === 'map' && this.map) {
                 const c = this.map.getCenter();
@@ -400,7 +503,13 @@ function jobSearch() {
             // Load all markers once on init
             this.fetchMarkers();
 
-            // moveend fires on initial setView → fetches job list
+            // If org was pre-selected from URL, show boundaries and highlight
+            if (this.filters.organization_id) {
+                const org = ALL_ORGS.find(o => o.id === this.filters.organization_id);
+                if (org && org.tea_id) {
+                    this.loadBoundariesThen(() => this.highlightDistrict(org.tea_id));
+                }
+            }
         },
 
         setMode(newMode) {
@@ -422,11 +531,25 @@ function jobSearch() {
                             west: b.getWest()
                         };
                         this.fetchJobs();
-                        // Markers already loaded — no re-fetch needed
                     }
                 });
             } else {
                 this.fetchJobs();
+            }
+        },
+
+        selectOrg(id, name, teaId) {
+            this.filters.organization_id = id;
+            this.selectedOrgName = name;
+            this.orgSearchText = '';
+
+            this.onFilterChange();
+
+            // Boundary highlight
+            if (id && teaId && this.mode === 'map') {
+                this.loadBoundariesThen(() => this.highlightDistrict(teaId));
+            } else {
+                this.clearHighlight();
             }
         },
 
@@ -439,9 +562,119 @@ function jobSearch() {
         },
 
         clearFilters() {
-            this.filters = { search: '', category: '', city: '', platform: '' };
+            this.filters = { search: '', category: '', city: '', platform: '', organization_id: '' };
+            this.selectedOrgName = '';
+            this.orgSearchText = '';
+            this.clearHighlight();
             this.onFilterChange();
         },
+
+        // --- Boundary layer ---
+
+        async loadBoundariesThen(callback) {
+            if (this.boundaryData) {
+                if (!this.boundariesVisible) this.showBoundaries();
+                if (callback) callback();
+                return;
+            }
+
+            try {
+                const resp = await fetch('/data/boundaries/districts.geojson');
+                if (!resp.ok) return;
+                this.boundaryData = await resp.json();
+                this.showBoundaries();
+                if (callback) callback();
+            } catch (e) {
+                console.error('Failed to load boundaries:', e);
+            }
+        },
+
+        toggleBoundaries() {
+            if (this.boundariesVisible) {
+                this.hideBoundaries();
+            } else {
+                this.loadBoundariesThen();
+            }
+        },
+
+        showBoundaries() {
+            if (this.boundaryLayer) {
+                this.map.addLayer(this.boundaryLayer);
+                this.boundariesVisible = true;
+                return;
+            }
+            if (!this.boundaryData) return;
+
+            const self = this;
+            this.boundaryLayer = L.geoJSON(this.boundaryData, {
+                style: function(feature) {
+                    return {
+                        color: '#6366f1',
+                        weight: 1.5,
+                        fillOpacity: 0.05,
+                        fillColor: '#6366f1'
+                    };
+                },
+                onEachFeature: function(feature, layer) {
+                    const props = feature.properties;
+                    layer.bindTooltip(props.name || 'Unknown', { sticky: true, className: 'text-xs' });
+
+                    layer.on('click', function() {
+                        // Find the org matching this boundary's tea_id
+                        const org = ALL_ORGS.find(o => o.tea_id === props.tea_id);
+                        if (org) {
+                            self.selectOrg(org.id, org.name, org.tea_id);
+                        }
+                    });
+                }
+            });
+            this.boundaryLayer.addTo(this.map);
+            this.boundariesVisible = true;
+        },
+
+        hideBoundaries() {
+            if (this.boundaryLayer && this.map.hasLayer(this.boundaryLayer)) {
+                this.map.removeLayer(this.boundaryLayer);
+            }
+            this.boundariesVisible = false;
+        },
+
+        highlightDistrict(teaId) {
+            if (!this.boundaryLayer) return;
+
+            // Reset all styles
+            this.boundaryLayer.eachLayer(layer => {
+                this.boundaryLayer.resetStyle(layer);
+            });
+
+            this._highlightedTeaId = teaId;
+
+            // Find and highlight the matching feature
+            this.boundaryLayer.eachLayer(layer => {
+                if (layer.feature && layer.feature.properties.tea_id === teaId) {
+                    layer.setStyle({
+                        color: '#f59e0b',
+                        weight: 3,
+                        fillOpacity: 0.15,
+                        fillColor: '#f59e0b'
+                    });
+                    layer.bringToFront();
+                    // Zoom to the district bounds
+                    this.map.fitBounds(layer.getBounds(), { padding: [50, 50], maxZoom: 12 });
+                }
+            });
+        },
+
+        clearHighlight() {
+            this._highlightedTeaId = null;
+            if (this.boundaryLayer) {
+                this.boundaryLayer.eachLayer(layer => {
+                    this.boundaryLayer.resetStyle(layer);
+                });
+            }
+        },
+
+        // --- Job fetching ---
 
         buildQueryParams(extra) {
             const p = new URLSearchParams();
@@ -450,6 +683,7 @@ function jobSearch() {
             if (this.filters.category) p.set('category', this.filters.category);
             if (this.filters.city) p.set('city', this.filters.city);
             if (this.filters.platform) p.set('platform', this.filters.platform);
+            if (this.filters.organization_id) p.set('organization_id', this.filters.organization_id);
 
             if (this.mode === 'map' && this.bounds) {
                 p.set('north', this.bounds.north.toFixed(6));
@@ -476,7 +710,6 @@ function jobSearch() {
         },
 
         async fetchMarkers() {
-            // Skip if filters haven't changed (load-once strategy)
             const key = this._currentFilterKey();
             if (key === this.markersFilterKey) return;
 
@@ -489,10 +722,11 @@ function jobSearch() {
             if (this.filters.category) p.set('category', this.filters.category);
             if (this.filters.city) p.set('city', this.filters.city);
             if (this.filters.platform) p.set('platform', this.filters.platform);
+            if (this.filters.organization_id) p.set('organization_id', this.filters.organization_id);
 
             try {
                 const resp = await fetch(`/api/v1/geo/jobs/markers?${p.toString()}`);
-                if (currentId !== this.fetchId) return; // stale
+                if (currentId !== this.fetchId) return;
                 const data = await resp.json();
 
                 this.markerCluster.clearLayers();
@@ -522,7 +756,6 @@ function jobSearch() {
         async _loadPopup(marker) {
             const jobId = marker._jobId;
 
-            // Use cached data if available
             if (this.popupCache.has(jobId)) {
                 marker.setPopupContent(this._buildPopupHtml(this.popupCache.get(jobId)));
                 return;

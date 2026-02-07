@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -58,6 +59,11 @@ app.include_router(web_router)
 
 # Static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+# Boundary GeoJSON (served as static file — ~3-5MB, gzip-compressed by middleware)
+boundaries_dir = "/app/data/boundaries" if os.path.isdir("/app/data/boundaries") else "data/boundaries"
+if os.path.isdir(boundaries_dir):
+    app.mount("/data/boundaries", StaticFiles(directory=boundaries_dir), name="boundaries")
 
 
 @app.get("/health")
