@@ -14,6 +14,27 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+# Texas bounding box for sanity-checking geocode results
+TEXAS_LAT_MIN, TEXAS_LAT_MAX = 25.8, 36.5
+TEXAS_LON_MIN, TEXAS_LON_MAX = -106.6, -93.5
+
+
+def _extract_city_from_address(address: dict) -> str | None:
+    """Extract city name from Nominatim address details."""
+    return (
+        address.get("city")
+        or address.get("town")
+        or address.get("village")
+        or address.get("hamlet")
+        or address.get("municipality")
+    )
+
+
+def _is_in_texas(lat: float, lon: float) -> bool:
+    """Check if coordinates fall within Texas bounding box."""
+    return TEXAS_LAT_MIN <= lat <= TEXAS_LAT_MAX and TEXAS_LON_MIN <= lon <= TEXAS_LON_MAX
+
+
 @dataclass
 class GeoResult:
     """Result from geocoding operation."""
@@ -22,6 +43,7 @@ class GeoResult:
     longitude: float
     display_name: str
     confidence: float  # 0-1 based on importance
+    city: str | None = None  # Extracted from addressdetails
 
 
 class Geocoder:
@@ -107,11 +129,20 @@ class Geocoder:
                     return None
 
                 result = results[0]
+                lat = float(result["lat"])
+                lon = float(result["lon"])
+
+                if not _is_in_texas(lat, lon):
+                    logger.debug(f"Geocoding result outside Texas bounds for '{search_query}': {lat}, {lon}")
+                    return None
+
+                address = result.get("address", {})
                 return GeoResult(
-                    latitude=float(result["lat"]),
-                    longitude=float(result["lon"]),
+                    latitude=lat,
+                    longitude=lon,
                     display_name=result.get("display_name", ""),
                     confidence=min(float(result.get("importance", 0.5)), 1.0),
+                    city=_extract_city_from_address(address),
                 )
 
         except httpx.HTTPError as e:
@@ -155,11 +186,20 @@ class Geocoder:
                     return None
 
                 result = results[0]
+                lat = float(result["lat"])
+                lon = float(result["lon"])
+
+                if not _is_in_texas(lat, lon):
+                    logger.debug(f"Geocoding result outside Texas bounds for city '{city}': {lat}, {lon}")
+                    return None
+
+                address = result.get("address", {})
                 return GeoResult(
-                    latitude=float(result["lat"]),
-                    longitude=float(result["lon"]),
+                    latitude=lat,
+                    longitude=lon,
                     display_name=result.get("display_name", ""),
                     confidence=min(float(result.get("importance", 0.5)), 1.0),
+                    city=_extract_city_from_address(address),
                 )
 
         except httpx.HTTPError as e:
@@ -217,11 +257,20 @@ class Geocoder:
                     return None
 
                 result = results[0]
+                lat = float(result["lat"])
+                lon = float(result["lon"])
+
+                if not _is_in_texas(lat, lon):
+                    logger.debug(f"Geocoding result outside Texas bounds for '{search_query}': {lat}, {lon}")
+                    return None
+
+                address = result.get("address", {})
                 return GeoResult(
-                    latitude=float(result["lat"]),
-                    longitude=float(result["lon"]),
+                    latitude=lat,
+                    longitude=lon,
                     display_name=result.get("display_name", ""),
                     confidence=min(float(result.get("importance", 0.5)), 1.0),
+                    city=_extract_city_from_address(address),
                 )
 
         except httpx.HTTPError as e:
@@ -230,68 +279,3 @@ class Geocoder:
         except (KeyError, ValueError) as e:
             logger.error(f"Geocoding parse error for '{search_query}': {e}")
             return None
-
-
-def geocode_organization(
-    name: str,
-    city: Optional[str] = None,
-    county: Optional[str] = None,
-) -> Optional[GeoResult]:
-    """
-    Geocode a Texas school district or organization.
-
-    Args:
-        name: Organization name (e.g., "Houston ISD")
-        city: Optional city hint
-        county: Optional county hint
-
-    Returns:
-        GeoResult if found, None otherwise
-    """
-    geocoder = Geocoder(rate_limit=settings.nominatim_rate_limit)
-
-    # Try with name directly first
-    result = geocoder.geocode_sync(name, city=city)
-    if result:
-        return result
-
-    # Try with county if available
-    if county:
-        result = geocoder.geocode_sync(f"{name}, {county} County")
-        if result:
-            return result
-
-    return None
-
-
-def geocode_job_location(
-    location: Optional[str],
-    city: Optional[str] = None,
-    org_name: Optional[str] = None,
-) -> Optional[GeoResult]:
-    """
-    Geocode a job posting location.
-
-    Args:
-        location: Location string from job posting
-        city: City if known
-        org_name: Organization name for context
-
-    Returns:
-        GeoResult if found, None otherwise
-    """
-    geocoder = Geocoder(rate_limit=settings.nominatim_rate_limit)
-
-    # Try location directly
-    if location:
-        result = geocoder.geocode_sync(location, city=city)
-        if result:
-            return result
-
-    # Fall back to city
-    if city:
-        result = geocoder.geocode_sync(city)
-        if result:
-            return result
-
-    return None

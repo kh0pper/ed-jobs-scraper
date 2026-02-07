@@ -92,36 +92,63 @@ def geocode_pending_jobs(batch_size: int = 200):
     """
     Geocode job postings that don't have coordinates.
 
-    Uses local Nominatim instance - no rate limiting needed.
+    Priority:
+    1. Jobs with location string → geocode by location for full-address precision
+    2. Org has coordinates → inherit org lat/lng
+    3. Fall back to structured city geocode
     """
     db = SyncSessionLocal()
     geocoder = Geocoder(rate_limit=0.1)  # Local instance
 
     try:
-        # Find jobs needing geocoding (have city but no coordinates)
         jobs = db.query(JobPosting).filter(
             JobPosting.geocode_status == "pending",
             JobPosting.is_active == True,  # noqa: E712
-            JobPosting.city.isnot(None),
         ).limit(batch_size).all()
 
         if not jobs:
             logger.info("No jobs need geocoding")
             return {"processed": 0, "success": 0, "failed": 0}
 
+        # Pre-load orgs to avoid N+1 queries
+        org_ids = {j.organization_id for j in jobs}
+        orgs = db.query(Organization).filter(Organization.id.in_(org_ids)).all()
+        org_map = {o.id: o for o in orgs}
+
         success = 0
         failed = 0
 
         for job in jobs:
             try:
-                result = geocoder.geocode_city_sync(
-                    city=job.city,
-                    state="Texas",
-                )
+                result = None
+                org = org_map.get(job.organization_id)
+
+                # 1. If job has a location string, try geocoding it directly
+                if job.location:
+                    result = geocoder.geocode_sync(
+                        query=job.location,
+                        state="Texas",
+                    )
+
+                # 2. If org has coordinates, inherit them
+                if not result and org and org.latitude and org.longitude:
+                    job.latitude = org.latitude
+                    job.longitude = org.longitude
+                    if not job.city and org.city:
+                        job.city = org.city
+                    job.geocode_status = "success"
+                    success += 1
+                    continue
+
+                # 3. Fall back to structured city geocode
+                if not result and job.city:
+                    result = geocoder.geocode_city_sync(city=job.city)
 
                 if result:
                     job.latitude = result.latitude
                     job.longitude = result.longitude
+                    if not job.city and result.city:
+                        job.city = result.city
                     job.geocode_status = "success"
                     success += 1
                 else:
@@ -151,13 +178,17 @@ def geocode_pending_organizations(batch_size: int = 100):
     """
     Geocode organizations that don't have coordinates.
 
-    Uses local Nominatim instance - no rate limiting needed.
+    Cascade:
+    1. Free-text search by org name (Nominatim finds districts as entities)
+    2. Org name + county context
+    3. Structured city search as last resort
+
+    When a result is found, also updates org.city from Nominatim addressdetails.
     """
     db = SyncSessionLocal()
     geocoder = Geocoder(rate_limit=0.1)  # Local instance
 
     try:
-        # Find orgs needing geocoding
         orgs = db.query(Organization).filter(
             Organization.latitude.is_(None),
             Organization.longitude.is_(None),
@@ -172,23 +203,30 @@ def geocode_pending_organizations(batch_size: int = 100):
 
         for org in orgs:
             try:
-                # Try geocoding with org name and city/county
+                # 1. Free-text search by org name — no city param
                 result = geocoder.geocode_sync(
                     query=org.name,
-                    city=org.city,
                     state="Texas",
                 )
 
-                # If that fails, try with county
+                # 2. Add county context
                 if not result and org.county:
                     result = geocoder.geocode_sync(
                         query=f"{org.name}, {org.county} County",
                         state="Texas",
                     )
 
+                # 3. Structured city search as last resort
+                if not result and org.city:
+                    result = geocoder.geocode_city_sync(city=org.city)
+
                 if result:
                     org.latitude = result.latitude
                     org.longitude = result.longitude
+                    # Update city from geocode if available and not manually set
+                    if result.city and org.city_source not in ("manual",):
+                        org.city = result.city
+                        org.city_source = "geocode"
                     success += 1
                 else:
                     failed += 1

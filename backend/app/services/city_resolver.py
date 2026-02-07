@@ -135,7 +135,11 @@ def derive_org_city(org: "Organization") -> tuple[str | None, str | None]:
     Returns:
         Tuple of (city, source) where source is 'county_seat' or None
     """
-    # If org already has a city, don't override
+    # Don't override geocode-derived or manually-set cities
+    if org.city and org.city_source in ("geocode", "manual", "name_parse"):
+        return org.city, org.city_source
+
+    # If org already has a city from another source, don't override
     if org.city:
         return org.city, org.city_source
 
