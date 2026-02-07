@@ -84,8 +84,24 @@ class ApplitrackScraper(BaseScraper):
             else:
                 detail_url = f"{APPLITRACK_BASE}/{slug}/onlineapp/default.aspx"
 
-            # Extract metadata from the sibling <div> with <li> elements
+            # Extract category from onclick="applyFor('ID','Category','Subcategory')"
+            # This is the most reliable source — present on all districts
             raw_category = None
+            apply_btn = table.find("input", onclick=True)
+            if apply_btn:
+                onclick = apply_btn.get("onclick", "")
+                cat_match = re.search(
+                    r"applyFor\([^,]+,\s*'([^']*)',\s*'([^']*)'",
+                    onclick,
+                )
+                if cat_match:
+                    cat, subcat = cat_match.group(1), cat_match.group(2)
+                    if subcat:
+                        raw_category = f"{cat}/{subcat}"
+                    elif cat:
+                        raw_category = cat
+
+            # Extract metadata from the sibling <div> with <li> elements
             location = None
             date_posted = None
             closing_date_text = None
@@ -105,7 +121,7 @@ class ApplitrackScraper(BaseScraper):
                         continue
 
                     if "position type" in label_text:
-                        # Comes as "Category/ Subcategory" — keep full string
+                        # Override with <li> value if present (more detailed)
                         raw_category = value
                     elif "location" in label_text:
                         location = value
