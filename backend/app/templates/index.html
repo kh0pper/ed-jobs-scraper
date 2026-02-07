@@ -292,12 +292,24 @@ function jobSearch() {
         fetchId: 0,
         map: null,
         markerCluster: null,
+        markersFilterKey: '',
+        popupCache: new Map(),
+        _moveendTimer: null,
 
         get jobCountText() {
             if (this.mode === 'map') {
                 return `${this.shownCount} of ${this.totalCount} jobs`;
             }
             return `${this.totalCount} jobs`;
+        },
+
+        _currentFilterKey() {
+            return [
+                this.filters.search,
+                this.filters.category,
+                this.filters.city,
+                this.filters.platform
+            ].join('|');
         },
 
         init() {
@@ -369,20 +381,26 @@ function jobSearch() {
             });
             this.map.addLayer(this.markerCluster);
 
+            // Debounced moveend — only updates job list, NOT markers
             this.map.on('moveend', () => {
-                const b = this.map.getBounds();
-                this.bounds = {
-                    north: b.getNorth(),
-                    south: b.getSouth(),
-                    east: b.getEast(),
-                    west: b.getWest()
-                };
-                this.syncToURL();
-                this.fetchJobs();
-                this.fetchMarkers();
+                clearTimeout(this._moveendTimer);
+                this._moveendTimer = setTimeout(() => {
+                    const b = this.map.getBounds();
+                    this.bounds = {
+                        north: b.getNorth(),
+                        south: b.getSouth(),
+                        east: b.getEast(),
+                        west: b.getWest()
+                    };
+                    this.syncToURL();
+                    this.fetchJobs();
+                }, 150);
             });
 
-            // moveend fires on initial setView, which triggers the first fetch
+            // Load all markers once on init
+            this.fetchMarkers();
+
+            // moveend fires on initial setView → fetches job list
         },
 
         setMode(newMode) {
@@ -396,7 +414,6 @@ function jobSearch() {
                         this.initMap();
                     } else {
                         this.map.invalidateSize();
-                        // Re-fetch with current bounds
                         const b = this.map.getBounds();
                         this.bounds = {
                             north: b.getNorth(),
@@ -405,11 +422,10 @@ function jobSearch() {
                             west: b.getWest()
                         };
                         this.fetchJobs();
-                        this.fetchMarkers();
+                        // Markers already loaded — no re-fetch needed
                     }
                 });
             } else {
-                // List mode — fetch without bbox
                 this.fetchJobs();
             }
         },
@@ -460,49 +476,40 @@ function jobSearch() {
         },
 
         async fetchMarkers() {
+            // Skip if filters haven't changed (load-once strategy)
+            const key = this._currentFilterKey();
+            if (key === this.markersFilterKey) return;
+
             this.fetchId++;
             const currentId = this.fetchId;
             this.markersLoading = true;
 
             const p = new URLSearchParams();
-            p.set('limit', '5000');
             if (this.filters.search) p.set('search', this.filters.search);
             if (this.filters.category) p.set('category', this.filters.category);
             if (this.filters.city) p.set('city', this.filters.city);
             if (this.filters.platform) p.set('platform', this.filters.platform);
-            if (this.bounds) {
-                p.set('north', this.bounds.north.toFixed(6));
-                p.set('south', this.bounds.south.toFixed(6));
-                p.set('east', this.bounds.east.toFixed(6));
-                p.set('west', this.bounds.west.toFixed(6));
-            }
 
             try {
-                const resp = await fetch(`/api/v1/geo/jobs/geojson?${p.toString()}`);
+                const resp = await fetch(`/api/v1/geo/jobs/markers?${p.toString()}`);
                 if (currentId !== this.fetchId) return; // stale
                 const data = await resp.json();
 
                 this.markerCluster.clearLayers();
+                this.popupCache.clear();
 
-                if (data.features) {
-                    data.features.forEach(f => {
-                        const coords = f.geometry.coordinates;
-                        const props = f.properties;
-                        const marker = L.marker([coords[1], coords[0]]);
-                        marker.bindPopup(`
-                            <div>
-                                <div class="job-popup-title">${this.escapeHtml(props.title)}</div>
-                                <div class="job-popup-org">${this.escapeHtml(props.organization)}</div>
-                                <div class="job-popup-meta">
-                                    ${props.category ? `<span class="job-popup-badge">${this.escapeHtml(props.category)}</span>` : ''}
-                                    ${props.city ? `<span class="job-popup-badge">${this.escapeHtml(props.city)}</span>` : ''}
-                                </div>
-                                <a href="/jobs/${props.id}" class="job-popup-link">View Details</a>
-                            </div>
-                        `);
-                        this.markerCluster.addLayer(marker);
-                    });
+                const markers = [];
+                for (const m of data.markers) {
+                    const marker = L.marker([m[0], m[1]]);
+                    marker._jobId = m[2];
+                    marker.bindPopup('<div class="flex justify-center py-2"><span class="loading loading-spinner loading-xs"></span></div>');
+                    marker.on('click', () => this._loadPopup(marker));
+                    markers.push(marker);
                 }
+                this.markerCluster.addLayers(markers);
+
+                this.markersFilterKey = key;
+                this.totalCount = data.total;
             } catch (e) {
                 console.error('Failed to load markers:', e);
             } finally {
@@ -510,6 +517,40 @@ function jobSearch() {
                     this.markersLoading = false;
                 }
             }
+        },
+
+        async _loadPopup(marker) {
+            const jobId = marker._jobId;
+
+            // Use cached data if available
+            if (this.popupCache.has(jobId)) {
+                marker.setPopupContent(this._buildPopupHtml(this.popupCache.get(jobId)));
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/v1/geo/jobs/${jobId}/popup`);
+                if (!resp.ok) throw new Error('Not found');
+                const data = await resp.json();
+                this.popupCache.set(jobId, data);
+                marker.setPopupContent(this._buildPopupHtml(data));
+            } catch (e) {
+                marker.setPopupContent('<div class="text-xs text-error">Could not load details</div>');
+            }
+        },
+
+        _buildPopupHtml(data) {
+            return `
+                <div>
+                    <div class="job-popup-title">${this.escapeHtml(data.title)}</div>
+                    <div class="job-popup-org">${this.escapeHtml(data.organization)}</div>
+                    <div class="job-popup-meta">
+                        ${data.category ? `<span class="job-popup-badge">${this.escapeHtml(data.category)}</span>` : ''}
+                        ${data.city ? `<span class="job-popup-badge">${this.escapeHtml(data.city)}</span>` : ''}
+                    </div>
+                    <a href="${this.escapeHtml(data.detail_url)}" class="job-popup-link">View Details</a>
+                </div>
+            `;
         },
 
         onJobsLoaded(detail) {

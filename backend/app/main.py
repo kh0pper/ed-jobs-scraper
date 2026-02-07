@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 
 from fastapi.staticfiles import StaticFiles
@@ -38,6 +39,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(
     CORSMiddleware,

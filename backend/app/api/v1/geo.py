@@ -3,7 +3,8 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -209,6 +210,96 @@ async def get_jobs_geojson(
         features.append(feature)
 
     return GeoJSONFeatureCollection(features=features)
+
+
+@router.get("/jobs/markers")
+async def get_job_markers(
+    db: AsyncSession = Depends(get_db),
+    search: str | None = Query(None, description="Search job titles"),
+    category: str | None = Query(None, description="Filter by category"),
+    platform: str | None = Query(None, description="Filter by platform"),
+    city: str | None = Query(None, description="Filter by city"),
+    limit: int = Query(15000, ge=1, le=15000, description="Maximum markers"),
+):
+    """
+    Compact marker data for map display.
+
+    Returns flat [lat, lng, id] tuples instead of full GeoJSON — ~3x smaller payload.
+    No bbox filtering: returns all matching geocoded jobs so the frontend can
+    load once and only re-fetch when filters change.
+    """
+    query = (
+        select(
+            JobPosting.latitude,
+            JobPosting.longitude,
+            JobPosting.id,
+        )
+        .where(JobPosting.latitude.isnot(None))
+        .where(JobPosting.longitude.isnot(None))
+        .where(JobPosting.is_active == True)
+    )
+
+    if search:
+        escaped = _escape_ilike(search)
+        query = query.where(JobPosting.title.ilike(f"%{escaped}%"))
+    if category:
+        query = query.where(JobPosting.category == category)
+    if platform:
+        query = query.where(JobPosting.platform == platform)
+    if city:
+        escaped = _escape_ilike(city)
+        query = query.where(JobPosting.city.ilike(f"%{escaped}%"))
+
+    query = query.limit(limit)
+    result = await db.execute(query)
+
+    markers = [
+        [float(row.latitude), float(row.longitude), str(row.id)]
+        for row in result
+    ]
+
+    return JSONResponse(
+        content={"markers": markers, "total": len(markers)},
+        headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
+@router.get("/jobs/{job_id}/popup")
+async def get_job_popup(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Lightweight popup data for a single job marker.
+
+    Returns just the fields needed for the map popup — fetched on marker click.
+    """
+    query = (
+        select(
+            JobPosting.title,
+            JobPosting.category,
+            JobPosting.city,
+            JobPosting.id,
+            Organization.name.label("organization_name"),
+        )
+        .join(Organization, JobPosting.organization_id == Organization.id)
+        .where(JobPosting.id == job_id)
+        .where(JobPosting.is_active == True)
+    )
+
+    result = await db.execute(query)
+    row = result.mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return {
+        "title": row["title"],
+        "organization": row["organization_name"],
+        "category": row["category"],
+        "city": row["city"],
+        "detail_url": f"/jobs/{row['id']}",
+    }
 
 
 @router.get("/organizations/nearby", response_model=list[dict])
