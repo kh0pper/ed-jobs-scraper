@@ -1,0 +1,77 @@
+{# Bare HTML partial — no {% extends %}, loaded by HTMX into #job-list-content #}
+
+{% if mode == 'map' and total_all > shown_total %}
+<!-- Non-geocoded jobs banner -->
+<div class="bg-info/10 border border-info/30 rounded-lg p-3 mb-4">
+    <p class="text-sm">
+        Showing <strong>{{ shown_total }}</strong> geocoded jobs in this area.
+        <a href="javascript:void(0)" @click="mode = 'list'; syncToURL()" class="link link-primary font-medium">Switch to list view</a>
+        to see all <strong>{{ total_all }}</strong> jobs including those without map locations.
+    </p>
+</div>
+{% endif %}
+
+{% if jobs %}
+<!-- Job count -->
+<div class="text-sm text-base-content/60 mb-3 px-1">
+    {% if mode == 'map' %}
+        {{ shown_total }} job{{ 's' if shown_total != 1 else '' }} in this area
+    {% else %}
+        {{ total_all }} job{{ 's' if total_all != 1 else '' }} found
+    {% endif %}
+</div>
+
+<!-- Job cards -->
+<div class="space-y-3">
+    {% for job in jobs %}
+    <a href="/jobs/{{ job.id }}"
+       class="block card bg-base-100 shadow-sm hover:shadow-md transition-shadow border border-base-200 job-card"
+       data-lat="{{ job.latitude or '' }}"
+       data-lng="{{ job.longitude or '' }}">
+        <div class="card-body p-4">
+            <h3 class="font-semibold text-sm leading-tight text-primary">{{ job.title }}</h3>
+            <p class="text-xs text-base-content/60 mt-1">{{ job.org_name | default("Unknown Organization") }}</p>
+            <div class="flex flex-wrap gap-1 mt-2">
+                {% if job.category %}
+                <span class="badge badge-primary badge-xs">{{ job.category }}</span>
+                {% endif %}
+                {% if job.city %}
+                <span class="badge badge-ghost badge-xs">{{ job.city }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+{% if has_more %}
+<!-- Show more button -->
+<div class="mt-4 text-center">
+    <button class="btn btn-ghost btn-sm"
+            hx-get="{{ more_url }}"
+            hx-target="#job-list-more"
+            hx-swap="outerHTML"
+            hx-indicator="#load-more-spinner">
+        Show more
+        <span id="load-more-spinner" class="loading loading-spinner loading-xs htmx-indicator"></span>
+    </button>
+    <div id="job-list-more"></div>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Empty state -->
+<div class="flex flex-col items-center justify-center py-12 text-base-content/50">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+    <p class="text-sm font-medium">No jobs found{% if mode == 'map' %} in this area{% endif %}</p>
+    <p class="text-xs mt-1">
+        {% if mode == 'map' %}
+        Try zooming out or adjusting filters
+        {% else %}
+        Try adjusting your filters
+        {% endif %}
+    </p>
+</div>
+{% endif %}

@@ -3,8 +3,8 @@
 from uuid import UUID
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Request, HTTPException, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,154 +20,141 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
+def _escape_ilike(value: str) -> str:
+    """Escape % and _ characters for use in ILIKE patterns."""
+    return value.replace("%", r"\%").replace("_", r"\_")
+
+
+async def _get_total_sources(db: AsyncSession) -> int:
+    """Get total active source count for footer."""
+    return (await db.execute(
+        select(func.count(ScrapeSource.id)).where(ScrapeSource.is_active == True)
+    )).scalar() or 0
+
+
+async def _get_filter_options(db: AsyncSession) -> tuple[list[str], list[str]]:
+    """Return (categories, platforms) for filter dropdowns."""
+    categories = get_all_categories()
+    platform_result = await db.execute(select(JobPosting.platform).distinct())
+    platforms = sorted([row[0] for row in platform_result if row[0]])
+    return categories, platforms
+
+
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: AsyncSession = Depends(get_db)):
-    """Home page with stats and recent jobs."""
-    # Get job stats
+    """Unified job explorer — map + list split-screen."""
     total_jobs = (await db.execute(
         select(func.count(JobPosting.id)).where(JobPosting.is_active == True)
     )).scalar() or 0
 
-    active_jobs = total_jobs
-
-    # Jobs by platform
-    platform_query = (
-        select(JobPosting.platform, func.count(JobPosting.id).label("count"))
-        .where(JobPosting.is_active == True)
-        .group_by(JobPosting.platform)
-        .order_by(func.count(JobPosting.id).desc())
-    )
-    platform_result = await db.execute(platform_query)
-    by_platform = {row.platform: row.count for row in platform_result}
-
-    # Jobs by category (top 15)
-    category_query = (
-        select(JobPosting.category, func.count(JobPosting.id).label("count"))
-        .where(JobPosting.is_active == True)
-        .where(JobPosting.category.isnot(None))
-        .group_by(JobPosting.category)
-        .order_by(func.count(JobPosting.id).desc())
-        .limit(15)
-    )
-    category_result = await db.execute(category_query)
-    by_category = {row.category: row.count for row in category_result}
-
-    # Jobs by city (top 10)
-    city_query = (
-        select(JobPosting.city, func.count(JobPosting.id).label("count"))
-        .where(JobPosting.is_active == True)
-        .where(JobPosting.city.isnot(None))
-        .group_by(JobPosting.city)
-        .order_by(func.count(JobPosting.id).desc())
-        .limit(10)
-    )
-    city_result = await db.execute(city_query)
-    by_city = {row.city: row.count for row in city_result}
-
-    # Total orgs and sources
-    total_orgs = (await db.execute(select(func.count(Organization.id)))).scalar() or 0
-    total_sources = (await db.execute(
-        select(func.count(ScrapeSource.id)).where(ScrapeSource.is_active == True)
-    )).scalar() or 0
-
-    # Recent jobs with org names
-    recent_jobs_query = (
-        select(JobPosting, Organization.name.label("org_name"))
-        .outerjoin(Organization, JobPosting.organization_id == Organization.id)
-        .where(JobPosting.is_active == True)
-        .order_by(JobPosting.first_seen_at.desc())
-        .limit(10)
-    )
-    recent_result = await db.execute(recent_jobs_query)
-    recent_jobs = [
-        {
-            "id": row.JobPosting.id,
-            "title": row.JobPosting.title,
-            "org_name": row.org_name,
-            "category": row.JobPosting.category,
-            "city": row.JobPosting.city,
-        }
-        for row in recent_result
-    ]
-
-    stats = {
-        "total_jobs": total_jobs,
-        "active_jobs": active_jobs,
-        "total_orgs": total_orgs,
-        "total_sources": total_sources,
-        "by_platform": by_platform,
-        "by_category": by_category,
-        "by_city": by_city,
-    }
+    total_sources = await _get_total_sources(db)
+    categories, platforms = await _get_filter_options(db)
 
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "stats": stats, "recent_jobs": recent_jobs},
+        {
+            "request": request,
+            "total_jobs": total_jobs,
+            "total_sources": total_sources,
+            "categories": categories,
+            "platforms": platforms,
+        },
     )
 
 
-@router.get("/jobs", response_class=HTMLResponse)
-async def jobs_list(
+@router.get("/jobs/partial", response_class=HTMLResponse)
+async def jobs_partial(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    mode: str = Query("map", description="View mode: map or list"),
     search: str | None = None,
     category: str | None = None,
     city: str | None = None,
     platform: str | None = None,
+    north: float | None = None,
+    south: float | None = None,
+    east: float | None = None,
+    west: float | None = None,
     page: int = 1,
 ):
-    """Jobs listing page with filters."""
+    """HTMX partial returning job card HTML for the job list panel."""
     limit = 20
     skip = (page - 1) * limit
+    has_bbox = all(v is not None for v in (north, south, east, west))
 
-    # Build query
+    # Base query for the list
     query = (
-        select(JobPosting, Organization.name.label("org_name"))
+        select(
+            JobPosting.id,
+            JobPosting.title,
+            JobPosting.application_url,
+            JobPosting.category,
+            JobPosting.city,
+            JobPosting.platform,
+            JobPosting.latitude,
+            JobPosting.longitude,
+            JobPosting.posting_date,
+            Organization.name.label("org_name"),
+        )
         .outerjoin(Organization, JobPosting.organization_id == Organization.id)
         .where(JobPosting.is_active == True)
     )
     count_query = select(func.count(JobPosting.id)).where(JobPosting.is_active == True)
 
+    # In map mode with bbox, spatially filter to geocoded jobs in viewport
+    if mode == "map" and has_bbox:
+        query = query.where(
+            JobPosting.latitude.isnot(None),
+            JobPosting.longitude.isnot(None),
+            JobPosting.latitude.between(south, north),
+            JobPosting.longitude.between(west, east),
+        )
+
+    # Text filters apply in both modes
     if search:
-        query = query.where(JobPosting.title.ilike(f"%{search}%"))
-        count_query = count_query.where(JobPosting.title.ilike(f"%{search}%"))
+        escaped = _escape_ilike(search)
+        query = query.where(JobPosting.title.ilike(f"%{escaped}%"))
+        count_query = count_query.where(JobPosting.title.ilike(f"%{_escape_ilike(search)}%"))
     if category:
         query = query.where(JobPosting.category == category)
         count_query = count_query.where(JobPosting.category == category)
     if city:
-        query = query.where(JobPosting.city.ilike(f"%{city}%"))
-        count_query = count_query.where(JobPosting.city.ilike(f"%{city}%"))
+        escaped = _escape_ilike(city)
+        query = query.where(JobPosting.city.ilike(f"%{escaped}%"))
+        count_query = count_query.where(JobPosting.city.ilike(f"%{_escape_ilike(city)}%"))
     if platform:
         query = query.where(JobPosting.platform == platform)
         count_query = count_query.where(JobPosting.platform == platform)
 
+    # Count for the spatial query (what's shown)
+    spatial_count_query = query.with_only_columns(func.count())
+    shown_total = (await db.execute(spatial_count_query)).scalar() or 0
+
+    # Total active jobs ignoring bbox (for "X of Y total" display)
+    total_all = (await db.execute(count_query)).scalar() or 0
+
     query = query.order_by(JobPosting.first_seen_at.desc()).offset(skip).limit(limit)
-
     result = await db.execute(query)
-    jobs = [
-        {
-            "id": row.JobPosting.id,
-            "title": row.JobPosting.title,
-            "application_url": row.JobPosting.application_url,
-            "org_name": row.org_name,
-            "category": row.JobPosting.category,
-            "city": row.JobPosting.city,
-            "platform": row.JobPosting.platform,
-            "posting_date": row.JobPosting.posting_date,
-        }
-        for row in result
-    ]
 
-    total = (await db.execute(count_query)).scalar() or 0
+    jobs = []
+    for row in result.mappings():
+        jobs.append({
+            "id": row["id"],
+            "title": row["title"],
+            "application_url": row["application_url"],
+            "org_name": row["org_name"],
+            "category": row["category"],
+            "city": row["city"],
+            "platform": row["platform"],
+            "latitude": row["latitude"],
+            "longitude": row["longitude"],
+            "posting_date": row["posting_date"],
+        })
 
-    # Get filter options
-    categories = get_all_categories()
-    platform_query = select(JobPosting.platform).distinct()
-    platform_result = await db.execute(platform_query)
-    platforms = sorted([row[0] for row in platform_result if row[0]])
+    has_more = (skip + limit) < shown_total
 
-    # Build pagination query string
-    params = {}
+    # Build "show more" query params
+    params = {"mode": mode, "page": page + 1}
     if search:
         params["search"] = search
     if category:
@@ -176,65 +163,45 @@ async def jobs_list(
         params["city"] = city
     if platform:
         params["platform"] = platform
-    pagination_query = urlencode(params)
+    if has_bbox:
+        params["north"] = north
+        params["south"] = south
+        params["east"] = east
+        params["west"] = west
+    more_url = f"/jobs/partial?{urlencode(params)}"
 
-    filters = {
-        "search": search or "",
-        "category": category or "",
-        "city": city or "",
-        "platform": platform or "",
-    }
-
-    return templates.TemplateResponse(
-        "jobs/list.html",
+    response = templates.TemplateResponse(
+        "partials/job_list.html",
         {
             "request": request,
             "jobs": jobs,
-            "total": total,
+            "shown_total": shown_total,
+            "total_all": total_all,
+            "mode": mode,
+            "has_more": has_more,
+            "more_url": more_url,
             "page": page,
-            "limit": limit,
-            "filters": filters,
-            "categories": categories,
-            "platforms": platforms,
-            "pagination_query": pagination_query,
         },
     )
 
+    # HX-Trigger header so Alpine can update the count display
+    response.headers["HX-Trigger"] = f'{{"jobsLoaded": {{"shown": {shown_total}, "total": {total_all}}}}}'
 
-@router.get("/jobs/map", response_class=HTMLResponse)
-async def jobs_map(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Map view of job postings with Leaflet.js."""
-    # Get count of geocoded jobs for display
-    geocoded_count = (await db.execute(
-        select(func.count(JobPosting.id))
-        .where(JobPosting.is_active == True)
-        .where(JobPosting.latitude.isnot(None))
-        .where(JobPosting.longitude.isnot(None))
-    )).scalar() or 0
+    return response
 
-    # Get some stats for the map sidebar
-    city_query = (
-        select(JobPosting.city, func.count(JobPosting.id).label("count"))
-        .where(JobPosting.is_active == True)
-        .where(JobPosting.city.isnot(None))
-        .group_by(JobPosting.city)
-        .order_by(func.count(JobPosting.id).desc())
-        .limit(10)
-    )
-    city_result = await db.execute(city_query)
-    top_cities = [(row.city, row.count) for row in city_result]
 
-    return templates.TemplateResponse(
-        "jobs/map.html",
-        {
-            "request": request,
-            "geocoded_count": geocoded_count,
-            "top_cities": top_cities,
-        },
-    )
+@router.get("/jobs/map", response_class=RedirectResponse)
+async def jobs_map_redirect(request: Request):
+    """Redirect old map URL to unified view."""
+    return RedirectResponse(url="/?mode=map", status_code=301)
+
+
+@router.get("/jobs", response_class=RedirectResponse)
+async def jobs_list_redirect(request: Request):
+    """Redirect old jobs list URL to unified view, preserving query params."""
+    params = dict(request.query_params)
+    params["mode"] = "list"
+    return RedirectResponse(url=f"/?{urlencode(params)}", status_code=301)
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
@@ -251,9 +218,16 @@ async def job_detail(request: Request, job_id: UUID, db: AsyncSession = Depends(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    total_sources = await _get_total_sources(db)
+
     return templates.TemplateResponse(
         "jobs/detail.html",
-        {"request": request, "job": job, "organization": job.organization},
+        {
+            "request": request,
+            "job": job,
+            "organization": job.organization,
+            "total_sources": total_sources,
+        },
     )
 
 
@@ -320,6 +294,7 @@ async def orgs_list(
         organizations.append(org_dict)
 
     total = (await db.execute(count_query)).scalar() or 0
+    total_sources = await _get_total_sources(db)
 
     # Build pagination query string
     params = {}
@@ -350,6 +325,7 @@ async def orgs_list(
             "limit": limit,
             "filters": filters,
             "pagination_query": pagination_query,
+            "total_sources": total_sources,
         },
     )
 
@@ -398,6 +374,8 @@ async def org_detail(request: Request, org_id: UUID, db: AsyncSession = Depends(
     jobs_result = await db.execute(jobs_query)
     jobs = jobs_result.scalars().all()
 
+    total_sources = await _get_total_sources(db)
+
     # Build org with stats
     org_data = {
         "id": org.id,
@@ -425,5 +403,6 @@ async def org_detail(request: Request, org_id: UUID, db: AsyncSession = Depends(
             "sources": sources,
             "jobs": jobs,
             "job_count": job_count,
+            "total_sources": total_sources,
         },
     )

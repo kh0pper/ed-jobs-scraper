@@ -1,137 +1,550 @@
 {% extends "base.html" %}
 
-{% block title %}Texas Ed Jobs - Home{% endblock %}
+{% block title %}Find Jobs - Texas Ed Jobs{% endblock %}
+
+{% block main_class %}flex-grow{% endblock %}
+
+{% block head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+<!-- Leaflet MarkerCluster CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+
+<style>
+    /* Map + list split layout */
+    .split-container {
+        height: calc(100vh - 64px - 52px); /* navbar + filter bar */
+    }
+    #job-panel {
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+    #job-panel::-webkit-scrollbar {
+        width: 6px;
+    }
+    #job-panel::-webkit-scrollbar-thumb {
+        background: oklch(var(--bc) / 0.2);
+        border-radius: 3px;
+    }
+
+    /* Leaflet popup styles */
+    .leaflet-popup-content {
+        min-width: 200px;
+        max-width: 280px;
+        margin: 8px 12px;
+    }
+    .job-popup-title {
+        font-weight: 600;
+        font-size: 0.875rem;
+        line-height: 1.3;
+        margin-bottom: 4px;
+    }
+    .job-popup-org {
+        color: oklch(var(--bc) / 0.6);
+        font-size: 0.75rem;
+        margin-bottom: 6px;
+    }
+    .job-popup-meta {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
+    .job-popup-badge {
+        font-size: 0.625rem;
+        padding: 1px 6px;
+        border-radius: 9999px;
+        background: oklch(var(--p) / 0.1);
+        color: oklch(var(--p));
+    }
+    .job-popup-link {
+        display: inline-block;
+        background: oklch(var(--p));
+        color: oklch(var(--pc));
+        padding: 4px 12px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .job-popup-link:hover {
+        opacity: 0.9;
+    }
+
+    /* Marker cluster colors */
+    .marker-cluster-small {
+        background-color: rgba(110, 204, 57, 0.6);
+    }
+    .marker-cluster-small div {
+        background-color: rgba(110, 204, 57, 0.9);
+    }
+    .marker-cluster-medium {
+        background-color: rgba(240, 194, 12, 0.6);
+    }
+    .marker-cluster-medium div {
+        background-color: rgba(240, 194, 12, 0.9);
+    }
+    .marker-cluster-large {
+        background-color: rgba(241, 128, 23, 0.6);
+    }
+    .marker-cluster-large div {
+        background-color: rgba(241, 128, 23, 0.9);
+    }
+
+    /* Loading overlay on map */
+    .map-loading-overlay {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 1000;
+        background: oklch(var(--b1));
+        border-radius: 8px;
+        padding: 6px 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        font-size: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* Mobile floating toggle */
+    .mobile-toggle {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1100;
+    }
+
+    /* Hide footer in map mode on desktop to maximize space */
+    @media (min-width: 1024px) {
+        [data-mode="map"] footer { display: none; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="space-y-8">
-    <!-- Hero Section -->
-    <div class="hero bg-primary rounded-box py-16">
-        <div class="hero-content text-center text-primary-content">
-            <div class="max-w-lg">
-                <h1 class="text-4xl font-bold">Find Your Next Education Job in Texas</h1>
-                <p class="py-6 text-lg opacity-90">
-                    {{ stats.active_jobs | default(0) | int }} active jobs across {{ stats.total_sources | default(0) }} school districts and organizations
-                </p>
+<div x-data="jobSearch()" x-init="init()" :data-mode="mode"
+     @jobs-loaded.window="onJobsLoaded($event.detail)"
+     class="flex flex-col">
 
-                <!-- Search Form -->
-                <form action="/jobs" method="get" class="join w-full max-w-md mx-auto">
-                    <input type="text" name="search" placeholder="Search jobs..."
-                           class="input input-bordered join-item flex-1">
-                    <button type="submit" class="btn btn-secondary join-item">
-                        Search
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
+    <!-- Filter bar -->
+    <div class="bg-base-100 border-b border-base-200 px-3 py-2 flex flex-wrap items-center gap-2">
+        <!-- Search input -->
+        <input type="text"
+               x-model="filters.search"
+               @input.debounce.400ms="onFilterChange()"
+               placeholder="Search jobs..."
+               class="input input-bordered input-sm w-40 lg:w-48">
 
-    <!-- Stats Grid -->
-    <div class="stats stats-vertical lg:stats-horizontal shadow w-full">
-        <div class="stat">
-            <div class="stat-figure text-primary">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+        <!-- Category dropdown -->
+        <select x-model="filters.category"
+                @change="onFilterChange()"
+                class="select select-bordered select-sm w-36 lg:w-40">
+            <option value="">All Categories</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- City input -->
+        <input type="text"
+               x-model="filters.city"
+               @input.debounce.400ms="onFilterChange()"
+               placeholder="City..."
+               class="input input-bordered input-sm w-28 lg:w-36">
+
+        <!-- Platform dropdown -->
+        <select x-model="filters.platform"
+                @change="onFilterChange()"
+                class="select select-bordered select-sm w-36 lg:w-40">
+            <option value="">All Platforms</option>
+            {% for plat in platforms %}
+            <option value="{{ plat }}">{{ plat }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Clear filters -->
+        <button @click="clearFilters()"
+                x-show="filters.search || filters.category || filters.city || filters.platform"
+                class="btn btn-ghost btn-xs">
+            Clear
+        </button>
+
+        <!-- Near Me (map mode only) -->
+        <button @click="locateMe()"
+                x-show="mode === 'map'"
+                class="btn btn-ghost btn-xs gap-1"
+                :class="locating && 'loading'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" x-show="!locating">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Near Me
+        </button>
+
+        <!-- Spacer -->
+        <div class="flex-1"></div>
+
+        <!-- Job count -->
+        <span class="text-xs text-base-content/50 hidden sm:inline" x-text="jobCountText"></span>
+
+        <!-- Mode toggle -->
+        <div class="join">
+            <button @click="setMode('list')"
+                    :class="mode === 'list' ? 'btn-primary' : 'btn-ghost'"
+                    class="btn btn-xs join-item">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                 </svg>
-            </div>
-            <div class="stat-title">Total Jobs</div>
-            <div class="stat-value text-primary">{{ stats.total_jobs | default(0) | int }}</div>
-            <div class="stat-desc">Active postings</div>
-        </div>
-
-        <div class="stat">
-            <div class="stat-figure text-secondary">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                List
+            </button>
+            <button @click="setMode('map')"
+                    :class="mode === 'map' ? 'btn-primary' : 'btn-ghost'"
+                    class="btn btn-xs join-item">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                 </svg>
-            </div>
-            <div class="stat-title">Organizations</div>
-            <div class="stat-value text-secondary">{{ stats.total_orgs | default(0) }}</div>
-            <div class="stat-desc">Districts &amp; orgs</div>
-        </div>
-
-        <div class="stat">
-            <div class="stat-figure text-accent">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path>
-                </svg>
-            </div>
-            <div class="stat-title">Platforms</div>
-            <div class="stat-value text-accent">{{ stats.by_platform | default({}) | length }}</div>
-            <div class="stat-desc">Job sources</div>
+                Map
+            </button>
         </div>
     </div>
 
-    <!-- Jobs by Category -->
-    <div class="card bg-base-100 shadow-xl">
-        <div class="card-body">
-            <h2 class="card-title text-2xl mb-4">Jobs by Category</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {% for category, count in (stats.by_category | default({})).items() %}
-                <a href="/jobs?category={{ category | urlencode }}"
-                   class="card bg-base-200 hover:bg-primary hover:text-primary-content transition-colors">
-                    <div class="card-body p-4">
-                        <p class="font-semibold text-sm">{{ category }}</p>
-                        <p class="text-2xl font-bold">{{ count }}</p>
-                    </div>
-                </a>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
+    <!-- Split container -->
+    <div class="split-container flex" :class="mode === 'list' ? 'flex-col' : ''">
+        <!-- Job list panel -->
+        <div id="job-panel"
+             :class="mode === 'map'
+                 ? 'w-[420px] shrink-0 border-r border-base-200 p-3 hidden lg:block'
+                 : 'flex-1 max-w-5xl mx-auto w-full p-4 lg:p-6'"
+             :style="mode === 'map' ? 'height: 100%' : ''">
 
-    <!-- Jobs by City -->
-    <div class="card bg-base-100 shadow-xl">
-        <div class="card-body">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="card-title text-2xl">Top Cities</h2>
-                <a href="/jobs/map" class="btn btn-outline btn-sm">View Map</a>
+            <!-- Loading spinner (initial) -->
+            <div x-show="loading" class="flex justify-center py-12">
+                <span class="loading loading-spinner loading-md text-primary"></span>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {% for city, count in (stats.by_city | default({})).items() %}
-                <a href="/jobs?city={{ city | urlencode }}"
-                   class="card bg-base-200 hover:bg-secondary hover:text-secondary-content transition-colors">
-                    <div class="card-body p-4">
-                        <p class="font-semibold text-sm">{{ city }}</p>
-                        <p class="text-2xl font-bold">{{ count }}</p>
-                    </div>
-                </a>
-                {% endfor %}
+
+            <!-- Job list content (HTMX target) -->
+            <div id="job-list-content" x-show="!loading"></div>
+        </div>
+
+        <!-- Map panel -->
+        <div x-show="mode === 'map'"
+             class="flex-1 relative"
+             x-transition:enter="transition-opacity duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100">
+            <div id="map" class="w-full h-full"></div>
+
+            <!-- Map loading overlay -->
+            <div x-show="markersLoading" class="map-loading-overlay">
+                <span class="loading loading-spinner loading-xs"></span>
+                Loading markers...
             </div>
         </div>
     </div>
 
-    <!-- Recent Jobs -->
-    <div class="card bg-base-100 shadow-xl">
-        <div class="card-body">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="card-title text-2xl">Recent Jobs</h2>
-                <a href="/jobs" class="btn btn-ghost btn-sm">View all</a>
-            </div>
-            <div class="space-y-3">
-                {% for job in recent_jobs %}
-                <a href="/jobs/{{ job.id }}" class="block p-4 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="font-semibold">{{ job.title }}</h3>
-                            <p class="text-sm opacity-70">{{ job.org_name | default("Unknown Organization") }}</p>
-                        </div>
-                        <div class="text-right flex flex-col items-end gap-1">
-                            {% if job.category %}
-                            <span class="badge badge-primary badge-sm">{{ job.category }}</span>
-                            {% endif %}
-                            {% if job.city %}
-                            <span class="text-sm opacity-60">{{ job.city }}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </a>
-                {% else %}
-                <div class="alert">
-                    <span>No jobs found yet. Check back soon!</span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
+    <!-- Mobile floating toggle (< lg only, map mode) -->
+    <div class="mobile-toggle lg:hidden" x-show="mode === 'map'">
+        <button @click="setMode('list')"
+                class="btn btn-primary btn-sm shadow-lg gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            Show List (<span x-text="shownCount"></span>)
+        </button>
+    </div>
+    <div class="mobile-toggle lg:hidden" x-show="mode === 'list'">
+        <button @click="setMode('map')"
+                class="btn btn-primary btn-sm shadow-lg gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+            Show Map
+        </button>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+<!-- Leaflet MarkerCluster -->
+<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+
+<script>
+function jobSearch() {
+    return {
+        mode: 'map',
+        filters: { search: '', category: '', city: '', platform: '' },
+        bounds: null,
+        mapCenter: { lat: 31.0, lng: -100.0, zoom: 6 },
+        loading: true,
+        markersLoading: false,
+        locating: false,
+        shownCount: 0,
+        totalCount: {{ total_jobs }},
+        fetchId: 0,
+        map: null,
+        markerCluster: null,
+
+        get jobCountText() {
+            if (this.mode === 'map') {
+                return `${this.shownCount} of ${this.totalCount} jobs`;
+            }
+            return `${this.totalCount} jobs`;
+        },
+
+        init() {
+            this.readURL();
+
+            this.$nextTick(() => {
+                if (this.mode === 'map') {
+                    this.initMap();
+                } else {
+                    this.fetchJobs();
+                }
+            });
+        },
+
+        readURL() {
+            const params = new URLSearchParams(window.location.search);
+            this.mode = params.get('mode') || 'map';
+            this.filters.search = params.get('search') || '';
+            this.filters.category = params.get('category') || '';
+            this.filters.city = params.get('city') || '';
+            this.filters.platform = params.get('platform') || '';
+
+            if (params.get('lat') && params.get('lng') && params.get('z')) {
+                this.mapCenter = {
+                    lat: parseFloat(params.get('lat')),
+                    lng: parseFloat(params.get('lng')),
+                    zoom: parseInt(params.get('z'))
+                };
+            }
+        },
+
+        syncToURL() {
+            const params = new URLSearchParams();
+            params.set('mode', this.mode);
+            if (this.filters.search) params.set('search', this.filters.search);
+            if (this.filters.category) params.set('category', this.filters.category);
+            if (this.filters.city) params.set('city', this.filters.city);
+            if (this.filters.platform) params.set('platform', this.filters.platform);
+
+            if (this.mode === 'map' && this.map) {
+                const c = this.map.getCenter();
+                params.set('lat', c.lat.toFixed(4));
+                params.set('lng', c.lng.toFixed(4));
+                params.set('z', this.map.getZoom());
+            }
+
+            history.replaceState(null, '', '?' + params.toString());
+        },
+
+        initMap() {
+            if (this.map) return;
+
+            this.map = L.map('map').setView(
+                [this.mapCenter.lat, this.mapCenter.lng],
+                this.mapCenter.zoom
+            );
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }).addTo(this.map);
+
+            this.markerCluster = L.markerClusterGroup({
+                chunkedLoading: true,
+                maxClusterRadius: 50,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false,
+                zoomToBoundsOnClick: true,
+            });
+            this.map.addLayer(this.markerCluster);
+
+            this.map.on('moveend', () => {
+                const b = this.map.getBounds();
+                this.bounds = {
+                    north: b.getNorth(),
+                    south: b.getSouth(),
+                    east: b.getEast(),
+                    west: b.getWest()
+                };
+                this.syncToURL();
+                this.fetchJobs();
+                this.fetchMarkers();
+            });
+
+            // moveend fires on initial setView, which triggers the first fetch
+        },
+
+        setMode(newMode) {
+            if (this.mode === newMode) return;
+            this.mode = newMode;
+            this.syncToURL();
+
+            if (newMode === 'map') {
+                this.$nextTick(() => {
+                    if (!this.map) {
+                        this.initMap();
+                    } else {
+                        this.map.invalidateSize();
+                        // Re-fetch with current bounds
+                        const b = this.map.getBounds();
+                        this.bounds = {
+                            north: b.getNorth(),
+                            south: b.getSouth(),
+                            east: b.getEast(),
+                            west: b.getWest()
+                        };
+                        this.fetchJobs();
+                        this.fetchMarkers();
+                    }
+                });
+            } else {
+                // List mode — fetch without bbox
+                this.fetchJobs();
+            }
+        },
+
+        onFilterChange() {
+            this.syncToURL();
+            this.fetchJobs();
+            if (this.mode === 'map' && this.map) {
+                this.fetchMarkers();
+            }
+        },
+
+        clearFilters() {
+            this.filters = { search: '', category: '', city: '', platform: '' };
+            this.onFilterChange();
+        },
+
+        buildQueryParams(extra) {
+            const p = new URLSearchParams();
+            p.set('mode', this.mode);
+            if (this.filters.search) p.set('search', this.filters.search);
+            if (this.filters.category) p.set('category', this.filters.category);
+            if (this.filters.city) p.set('city', this.filters.city);
+            if (this.filters.platform) p.set('platform', this.filters.platform);
+
+            if (this.mode === 'map' && this.bounds) {
+                p.set('north', this.bounds.north.toFixed(6));
+                p.set('south', this.bounds.south.toFixed(6));
+                p.set('east', this.bounds.east.toFixed(6));
+                p.set('west', this.bounds.west.toFixed(6));
+            }
+
+            if (extra) {
+                Object.entries(extra).forEach(([k, v]) => p.set(k, v));
+            }
+            return p.toString();
+        },
+
+        fetchJobs() {
+            this.loading = true;
+            const qs = this.buildQueryParams({ page: 1 });
+            htmx.ajax('GET', `/jobs/partial?${qs}`, {
+                target: '#job-list-content',
+                swap: 'innerHTML'
+            }).then(() => {
+                this.loading = false;
+            });
+        },
+
+        async fetchMarkers() {
+            this.fetchId++;
+            const currentId = this.fetchId;
+            this.markersLoading = true;
+
+            const p = new URLSearchParams();
+            p.set('limit', '5000');
+            if (this.filters.search) p.set('search', this.filters.search);
+            if (this.filters.category) p.set('category', this.filters.category);
+            if (this.filters.city) p.set('city', this.filters.city);
+            if (this.filters.platform) p.set('platform', this.filters.platform);
+            if (this.bounds) {
+                p.set('north', this.bounds.north.toFixed(6));
+                p.set('south', this.bounds.south.toFixed(6));
+                p.set('east', this.bounds.east.toFixed(6));
+                p.set('west', this.bounds.west.toFixed(6));
+            }
+
+            try {
+                const resp = await fetch(`/api/v1/geo/jobs/geojson?${p.toString()}`);
+                if (currentId !== this.fetchId) return; // stale
+                const data = await resp.json();
+
+                this.markerCluster.clearLayers();
+
+                if (data.features) {
+                    data.features.forEach(f => {
+                        const coords = f.geometry.coordinates;
+                        const props = f.properties;
+                        const marker = L.marker([coords[1], coords[0]]);
+                        marker.bindPopup(`
+                            <div>
+                                <div class="job-popup-title">${this.escapeHtml(props.title)}</div>
+                                <div class="job-popup-org">${this.escapeHtml(props.organization)}</div>
+                                <div class="job-popup-meta">
+                                    ${props.category ? `<span class="job-popup-badge">${this.escapeHtml(props.category)}</span>` : ''}
+                                    ${props.city ? `<span class="job-popup-badge">${this.escapeHtml(props.city)}</span>` : ''}
+                                </div>
+                                <a href="/jobs/${props.id}" class="job-popup-link">View Details</a>
+                            </div>
+                        `);
+                        this.markerCluster.addLayer(marker);
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load markers:', e);
+            } finally {
+                if (currentId === this.fetchId) {
+                    this.markersLoading = false;
+                }
+            }
+        },
+
+        onJobsLoaded(detail) {
+            if (detail.shown !== undefined) this.shownCount = detail.shown;
+            if (detail.total !== undefined) this.totalCount = detail.total;
+        },
+
+        locateMe() {
+            if (!navigator.geolocation) {
+                alert('Geolocation is not supported by your browser.');
+                return;
+            }
+            this.locating = true;
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    this.locating = false;
+                    if (this.mode !== 'map') this.setMode('map');
+                    this.$nextTick(() => {
+                        if (this.map) this.map.flyTo([pos.coords.latitude, pos.coords.longitude], 11);
+                    });
+                },
+                () => {
+                    this.locating = false;
+                    alert('Unable to get your location. Please enable location services.');
+                }
+            );
+        },
+
+        escapeHtml(text) {
+            if (!text) return '';
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+    };
+}
+</script>
 {% endblock %}

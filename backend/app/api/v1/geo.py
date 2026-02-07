@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import get_db
@@ -42,6 +42,11 @@ class GeoJSONFeatureCollection(BaseModel):
 
     type: str = "FeatureCollection"
     features: list[GeoJSONFeature]
+
+
+def _escape_ilike(value: str) -> str:
+    """Escape % and _ characters for use in ILIKE patterns."""
+    return value.replace("%", r"\%").replace("_", r"\_")
 
 
 @router.get("/jobs/nearby", response_model=list[JobGeoResult])
@@ -124,11 +129,20 @@ async def get_jobs_geojson(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(1000, ge=1, le=5000, description="Maximum features to return"),
     active_only: bool = Query(True, description="Only return active jobs"),
+    north: float | None = Query(None, ge=-90, le=90, description="Bounding box north"),
+    south: float | None = Query(None, ge=-90, le=90, description="Bounding box south"),
+    east: float | None = Query(None, ge=-180, le=180, description="Bounding box east"),
+    west: float | None = Query(None, ge=-180, le=180, description="Bounding box west"),
+    search: str | None = Query(None, description="Search job titles"),
+    category: str | None = Query(None, description="Filter by category"),
+    platform: str | None = Query(None, description="Filter by platform"),
+    city: str | None = Query(None, description="Filter by city"),
 ):
     """
     Get jobs as GeoJSON FeatureCollection for map display.
 
     Optimized for Leaflet/Mapbox consumption with marker clustering.
+    Supports optional bounding box and filter parameters.
     """
     query = (
         select(
@@ -140,6 +154,7 @@ async def get_jobs_geojson(
             JobPosting.latitude,
             JobPosting.longitude,
             JobPosting.platform,
+            JobPosting.category,
             Organization.name.label("organization_name"),
         )
         .join(Organization, JobPosting.organization_id == Organization.id)
@@ -149,6 +164,25 @@ async def get_jobs_geojson(
 
     if active_only:
         query = query.where(JobPosting.is_active == True)
+
+    # Bounding box filter (all four required together)
+    if north is not None and south is not None and east is not None and west is not None:
+        query = query.where(
+            JobPosting.latitude.between(south, north),
+            JobPosting.longitude.between(west, east),
+        )
+
+    # Text filters
+    if search:
+        escaped = _escape_ilike(search)
+        query = query.where(JobPosting.title.ilike(f"%{escaped}%"))
+    if category:
+        query = query.where(JobPosting.category == category)
+    if platform:
+        query = query.where(JobPosting.platform == platform)
+    if city:
+        escaped = _escape_ilike(city)
+        query = query.where(JobPosting.city.ilike(f"%{escaped}%"))
 
     query = query.limit(limit)
 
@@ -168,6 +202,7 @@ async def get_jobs_geojson(
                 "city": row["city"],
                 "state": row["state"],
                 "platform": row["platform"],
+                "category": row["category"],
                 "organization": row["organization_name"],
             },
         )

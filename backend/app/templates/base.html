@@ -62,9 +62,7 @@
                     </svg>
                 </div>
                 <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 text-base-content rounded-box w-52">
-                    <li><a href="/">Home</a></li>
-                    <li><a href="/jobs">Jobs</a></li>
-                    <li><a href="/jobs/map">Map</a></li>
+                    <li><a href="/">Find Jobs</a></li>
                     <li><a href="/orgs">Organizations</a></li>
                 </ul>
             </div>
@@ -72,9 +70,7 @@
         </div>
         <div class="navbar-center hidden lg:flex">
             <ul class="menu menu-horizontal px-1">
-                <li><a href="/" class="hover:bg-primary-focus">Home</a></li>
-                <li><a href="/jobs" class="hover:bg-primary-focus">Jobs</a></li>
-                <li><a href="/jobs/map" class="hover:bg-primary-focus">Map</a></li>
+                <li><a href="/" class="hover:bg-primary-focus">Find Jobs</a></li>
                 <li><a href="/orgs" class="hover:bg-primary-focus">Organizations</a></li>
             </ul>
         </div>
@@ -95,7 +91,7 @@
     </div>
 
     <!-- Main Content -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="{% block main_class %}flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
@@ -104,7 +100,7 @@
         <aside>
             <p class="font-semibold">Texas Ed Jobs</p>
             <p>Aggregating education job postings across Texas</p>
-            <p class="text-sm opacity-70">Data refreshed every 30 minutes from {{ stats.total_sources if stats else '?' }} sources</p>
+            <p class="text-sm opacity-70">Data refreshed every 30 minutes from {{ total_sources if total_sources else '?' }} sources</p>
         </aside>
     </footer>
 
