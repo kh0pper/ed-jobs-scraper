@@ -14,7 +14,16 @@ import uuid
 from pathlib import Path
 
 # Add backend to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+# In Docker: script is at /app/scripts/, backend code is at /app/
+# Locally: script is at scripts/, backend code is at backend/
+script_dir = Path(__file__).resolve().parent
+project_root = script_dir.parent
+backend_dir = project_root / "backend"
+if backend_dir.exists():
+    sys.path.insert(0, str(backend_dir))
+else:
+    # Inside Docker, /app is the backend root
+    sys.path.insert(0, str(script_dir.parent))
 
 from sqlalchemy import text
 from app.models.base import sync_engine, SyncSessionLocal
