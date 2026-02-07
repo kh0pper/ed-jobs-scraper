@@ -219,14 +219,18 @@ def geocode_pending_organizations(batch_size: int = 100):
 
         for org in orgs:
             try:
-                # 1. Free-text search by full org name
-                result = geocoder.geocode_sync(
-                    query=org.name,
-                    state="Texas",
-                )
+                result = None
+                place = _strip_org_suffix(org.name)
+
+                # 1. Free-text search by full org name (ISDs only —
+                #    non-ISDs match random things like "Kipp Cemetery")
+                if place:  # has ISD suffix
+                    result = geocoder.geocode_sync(
+                        query=org.name,
+                        state="Texas",
+                    )
 
                 # 2. Strip ISD suffix → place name + county context
-                place = _strip_org_suffix(org.name)
                 if not result and place and org.county:
                     result = geocoder.geocode_sync(
                         query=f"{place}, {org.county} County",
