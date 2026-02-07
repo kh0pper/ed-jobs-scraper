@@ -114,8 +114,8 @@ def geocode_pending_jobs(batch_size: int = 200):
 
         for job in jobs:
             try:
-                result = geocoder.geocode_sync(
-                    query=job.city,
+                result = geocoder.geocode_city_sync(
+                    city=job.city,
                     state="Texas",
                 )
 

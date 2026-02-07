@@ -121,6 +121,54 @@ class Geocoder:
             logger.error(f"Geocoding parse error for '{search_query}': {e}")
             return None
 
+    def geocode_city_sync(
+        self, city: str, state: str = "Texas", country: str = "USA"
+    ) -> Optional[GeoResult]:
+        """
+        Geocode a city name using structured search parameters.
+
+        Uses Nominatim's structured query (city/state/country as separate params)
+        instead of free-text search, which avoids county name collisions
+        (e.g. "Austin" matching Austin County instead of City of Austin).
+        """
+        self._wait_for_rate_limit()
+
+        try:
+            with httpx.Client(timeout=30) as client:
+                response = client.get(
+                    self.base_url,
+                    params={
+                        "city": city,
+                        "state": state,
+                        "country": country,
+                        "format": "json",
+                        "limit": 1,
+                        "addressdetails": 1,
+                    },
+                    headers={"User-Agent": self.user_agent},
+                )
+                response.raise_for_status()
+
+                results = response.json()
+                if not results:
+                    logger.debug(f"No geocoding results for city: {city}")
+                    return None
+
+                result = results[0]
+                return GeoResult(
+                    latitude=float(result["lat"]),
+                    longitude=float(result["lon"]),
+                    display_name=result.get("display_name", ""),
+                    confidence=min(float(result.get("importance", 0.5)), 1.0),
+                )
+
+        except httpx.HTTPError as e:
+            logger.error(f"Geocoding HTTP error for city '{city}': {e}")
+            return None
+        except (KeyError, ValueError) as e:
+            logger.error(f"Geocoding parse error for city '{city}': {e}")
+            return None
+
     async def geocode_async(
         self,
         query: str,
