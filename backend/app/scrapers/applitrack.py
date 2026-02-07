@@ -90,6 +90,8 @@ class ApplitrackScraper(BaseScraper):
             apply_btn = table.find("input", onclick=True)
             if apply_btn:
                 onclick = apply_btn.get("onclick", "")
+                # BS4 may return escaped quotes (\') — normalize first
+                onclick = onclick.replace("\\'", "'")
                 cat_match = re.search(
                     r"applyFor\([^,]+,\s*'([^']*)',\s*'([^']*)'",
                     onclick,
