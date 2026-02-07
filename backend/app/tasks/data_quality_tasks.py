@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import Optional
 
 from app.tasks.celery_app import celery_app
 from app.models.base import SyncSessionLocal
@@ -173,15 +174,30 @@ def geocode_pending_jobs(batch_size: int = 200):
         db.close()
 
 
+def _strip_org_suffix(name: str) -> Optional[str]:
+    """Strip ISD/CISD/etc. suffix from org name to get the place name.
+
+    Returns the place name or None if nothing useful remains.
+    """
+    place = re.sub(
+        r"\s+(C?ISD|CONSOLIDATED ISD|INDEPENDENT SCHOOL DISTRICT)$",
+        "", name, flags=re.IGNORECASE,
+    ).strip()
+    if place and place != name:
+        return place
+    return None
+
+
 @celery_app.task(name="app.tasks.data_quality_tasks.geocode_pending_organizations")
 def geocode_pending_organizations(batch_size: int = 100):
     """
     Geocode organizations that don't have coordinates.
 
     Cascade:
-    1. Free-text search by org name (Nominatim finds districts as entities)
-    2. Org name + county context
-    3. Structured city search as last resort
+    1. Free-text search by full org name (finds districts in OSM as entities)
+    2. Strip ISD suffix → place name + county context (e.g. "Klein, Harris County")
+    3. Strip ISD suffix → structured city search (e.g. city="Klein")
+    4. Structured city search on org.city (county seat fallback)
 
     When a result is found, also updates org.city from Nominatim addressdetails.
     """
@@ -203,20 +219,25 @@ def geocode_pending_organizations(batch_size: int = 100):
 
         for org in orgs:
             try:
-                # 1. Free-text search by org name — no city param
+                # 1. Free-text search by full org name
                 result = geocoder.geocode_sync(
                     query=org.name,
                     state="Texas",
                 )
 
-                # 2. Add county context
-                if not result and org.county:
+                # 2. Strip ISD suffix → place name + county context
+                place = _strip_org_suffix(org.name)
+                if not result and place and org.county:
                     result = geocoder.geocode_sync(
-                        query=f"{org.name}, {org.county} County",
+                        query=f"{place}, {org.county} County",
                         state="Texas",
                     )
 
-                # 3. Structured city search as last resort
+                # 3. Strip ISD suffix → structured city search
+                if not result and place:
+                    result = geocoder.geocode_city_sync(city=place)
+
+                # 4. Structured city search on org.city (county seat)
                 if not result and org.city:
                     result = geocoder.geocode_city_sync(city=org.city)
 
