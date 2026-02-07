@@ -98,7 +98,7 @@ services:
       PBF_URL: https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
       REPLICATION_URL: https://download.geofabrik.de/north-america/us/texas-updates/
       NOMINATIM_PASSWORD: nominatim_secure_2026
-      IMPORT_STYLE: street
+      IMPORT_STYLE: full
     volumes:
       - edjobs_nominatim_data:/var/lib/postgresql/14/main
     shm_size: 1g
