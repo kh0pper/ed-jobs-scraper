@@ -11,7 +11,7 @@ from app.models.scrape_source import ScrapeSource  # noqa: F401
 from app.models.job_posting import JobPosting
 from app.models.scrape_run import ScrapeRun  # noqa: F401
 from app.services.category_normalizer import normalize_category
-from app.services.geocoder import Geocoder
+from app.services.geocoder import Geocoder, is_geocodable_campus
 from app.services.city_resolver import resolve_city_for_job, derive_org_city
 
 logger = logging.getLogger(__name__)
@@ -95,8 +95,9 @@ def geocode_pending_jobs(batch_size: int = 200):
 
     Priority:
     1. Jobs with location string → geocode by location for full-address precision
-    2. Org has coordinates → inherit org lat/lng
-    3. Fall back to structured city geocode
+    2. Jobs with geocodable campus name → geocode campus + org city
+    3. Org has coordinates → inherit org lat/lng
+    4. Fall back to structured city geocode
     """
     db = SyncSessionLocal()
     geocoder = Geocoder(rate_limit=0.1)  # Local instance
@@ -116,12 +117,16 @@ def geocode_pending_jobs(batch_size: int = 200):
         orgs = db.query(Organization).filter(Organization.id.in_(org_ids)).all()
         org_map = {o.id: o for o in orgs}
 
+        # Cache campus geocode results: (campus_name_lower, org_city) -> GeoResult | None
+        campus_cache = {}
+
         success = 0
         failed = 0
 
         for job in jobs:
             try:
                 result = None
+                source = None
                 org = org_map.get(job.organization_id)
 
                 # 1. If job has a location string, try geocoding it directly
@@ -130,20 +135,41 @@ def geocode_pending_jobs(batch_size: int = 200):
                         query=job.location,
                         state="Texas",
                     )
+                    if result:
+                        source = "address"
 
-                # 2. If org has coordinates, inherit them
+                # 2. If job has a geocodable campus, try campus + org city
+                if not result and job.campus and is_geocodable_campus(job.campus):
+                    org_city = org.city if org else None
+                    cache_key = (job.campus.strip().lower(), org_city)
+                    if cache_key in campus_cache:
+                        result = campus_cache[cache_key]
+                    else:
+                        result = geocoder.geocode_sync(
+                            query=job.campus,
+                            city=org_city,
+                            state="Texas",
+                        )
+                        campus_cache[cache_key] = result
+                    if result:
+                        source = "campus"
+
+                # 3. If org has coordinates, inherit them
                 if not result and org and org.latitude and org.longitude:
                     job.latitude = org.latitude
                     job.longitude = org.longitude
                     if not job.city and org.city:
                         job.city = org.city
                     job.geocode_status = "success"
+                    job.geocode_source = "org"
                     success += 1
                     continue
 
-                # 3. Fall back to structured city geocode
+                # 4. Fall back to structured city geocode
                 if not result and job.city:
                     result = geocoder.geocode_city_sync(city=job.city)
+                    if result:
+                        source = "city"
 
                 if result:
                     job.latitude = result.latitude
@@ -151,6 +177,7 @@ def geocode_pending_jobs(batch_size: int = 200):
                     if not job.city and result.city:
                         job.city = result.city
                     job.geocode_status = "success"
+                    job.geocode_source = source
                     success += 1
                 else:
                     job.geocode_status = "failed"
@@ -504,6 +531,49 @@ def derive_org_cities(batch_size: int = 500):
     except Exception as e:
         db.rollback()
         logger.error(f"Org city derivation failed: {e}")
+        raise
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.data_quality_tasks.regeocode_legacy_jobs")
+def regeocode_legacy_jobs(batch_size: int = 500):
+    """
+    One-time task to re-geocode legacy jobs that have campus data.
+
+    Resets geocode_status to 'pending' for jobs with geocode_source='legacy'
+    AND campus IS NOT NULL, so the normal geocode beat task picks them up
+    with campus-aware geocoding.
+    """
+    db = SyncSessionLocal()
+    total_reset = 0
+
+    try:
+        while True:
+            count = db.query(JobPosting).filter(
+                JobPosting.geocode_source == "legacy",
+                JobPosting.campus.isnot(None),
+                JobPosting.is_active == True,  # noqa: E712
+            ).limit(batch_size).update({
+                "geocode_status": "pending",
+                "geocode_source": None,
+            }, synchronize_session=False)
+
+            db.commit()
+            total_reset += count
+
+            if count < batch_size:
+                break
+
+            logger.info(f"Re-geocode progress: {total_reset} jobs reset")
+
+        logger.info(f"Re-geocode complete: {total_reset} legacy jobs reset for campus geocoding")
+        return {"total_reset": total_reset}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Re-geocode legacy jobs failed: {e}")
         raise
 
     finally:

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -33,6 +34,54 @@ def _extract_city_from_address(address: dict) -> str | None:
 def _is_in_texas(lat: float, lon: float) -> bool:
     """Check if coordinates fall within Texas bounding box."""
     return TEXAS_LAT_MIN <= lat <= TEXAS_LAT_MAX and TEXAS_LON_MIN <= lon <= TEXAS_LON_MAX
+
+
+# Patterns indicating a geocodable school building
+_SCHOOL_PATTERNS = re.compile(
+    r"(?:high school|middle school|elementary|junior high|intermediate|primary|"
+    r"academy|early childhood|learning center|education center|"
+    r"ninth grade|6th grade center|secondary school|pre-?k center|"
+    r"collegiate|preparatory|college prep|"
+    r"\bh\.?\s*s\.?\b|\bm\.?\s*s\.?\b|\be\.?\s*s\.?\b|\belem\b)",
+    re.IGNORECASE,
+)
+
+# Patterns indicating admin/department locations (NOT geocodable)
+_NON_SCHOOL_PATTERNS = re.compile(
+    r"(?:human resources|superintendent|asst supt|tax office|operations|"
+    r"transportation|maintenance|technology|finance|payroll|accounting|"
+    r"itinerant|health services|student services|fine arts|academics|"
+    r"spec educ.*(?:support|instr)|state and federal|warehouse|police|security|"
+    r"communications|curriculum|testing|assessment|nutrition|food service|"
+    r"special programs|central office|district office|admin(?:istrat)|"
+    r"\bbusiness\b|\bhr\b)",
+    re.IGNORECASE,
+)
+
+
+def is_geocodable_campus(campus: str) -> bool:
+    """Determine if a campus name represents a geocodable school building.
+
+    Returns True for school names like "Summer Creek High School".
+    Returns False for admin departments like "Human Resources" or "Transportation".
+    Returns False for unrecognized/ambiguous values (conservative approach).
+    """
+    if not campus or len(campus.strip()) < 3:
+        return False
+
+    campus = campus.strip()
+
+    # Check non-school patterns first (takes priority)
+    if _NON_SCHOOL_PATTERNS.search(campus):
+        return False
+
+    # Check school patterns
+    if _SCHOOL_PATTERNS.search(campus):
+        return True
+
+    # Unrecognized — log and skip (conservative)
+    logger.debug(f"Unrecognized campus name, skipping geocode: '{campus}'")
+    return False
 
 
 @dataclass

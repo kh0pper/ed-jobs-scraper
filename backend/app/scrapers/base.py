@@ -101,6 +101,18 @@ class BaseScraper(ABC):
                 self.db.commit()
                 return "updated"
             else:
+                # Backfill fields that were previously null but scraper now provides
+                backfill_fields = ("campus", "raw_category", "posting_date")
+                changed = False
+                for key in backfill_fields:
+                    if key in data and data[key] is not None and getattr(existing, key) is None:
+                        setattr(existing, key, data[key])
+                        changed = True
+                if changed and existing.campus and existing.geocode_status != "pending":
+                    # Reset geocode so campus-aware geocoding can run
+                    existing.geocode_status = "pending"
+                    existing.geocode_source = None
+
                 existing.is_active = True
                 self.db.commit()
                 return "existing"

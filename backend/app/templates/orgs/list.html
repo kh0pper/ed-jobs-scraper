@@ -357,12 +357,14 @@ function orgExplorer() {
                 this.markersLayer.clearLayers();
                 this.popupCache.clear();
 
-                // Build job count map for choropleth
+                // Build job count map for choropleth + tea_id→orgId lookup for boundary clicks
                 this._orgJobCounts = {};
+                this._teaIdToOrgId = new Map();
                 for (const m of data.markers) {
                     // m = [lat, lng, id, tea_id, active_job_count]
                     if (m[3]) { // has tea_id
                         this._orgJobCounts[m[3]] = (this._orgJobCounts[m[3]] || 0) + m[4];
+                        this._teaIdToOrgId.set(m[3], m[2]);
                     }
 
                     const marker = L.circleMarker([m[0], m[1]], {
@@ -492,6 +494,28 @@ function orgExplorer() {
                         `${props.name || 'Unknown'} (${jobCount} jobs)`,
                         { sticky: true, className: 'text-xs' }
                     );
+                    layer.on('click', async function(e) {
+                        const orgId = self._teaIdToOrgId && self._teaIdToOrgId.get(props.tea_id);
+                        if (!orgId) return;
+
+                        const popup = L.popup().setLatLng(e.latlng)
+                            .setContent('<div class="flex justify-center py-2"><span class="loading loading-spinner loading-xs"></span></div>')
+                            .openOn(self.map);
+
+                        if (self.popupCache.has(orgId)) {
+                            popup.setContent(self._buildPopupHtml(self.popupCache.get(orgId)));
+                            return;
+                        }
+                        try {
+                            const resp = await fetch(`/api/v1/geo/organizations/${orgId}/popup`);
+                            if (!resp.ok) throw new Error();
+                            const data = await resp.json();
+                            self.popupCache.set(orgId, data);
+                            popup.setContent(self._buildPopupHtml(data));
+                        } catch {
+                            popup.setContent('<div class="text-xs text-error">Could not load details</div>');
+                        }
+                    });
                 }
             });
             this.boundaryLayer.addTo(this.map);

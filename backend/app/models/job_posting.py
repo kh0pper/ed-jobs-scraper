@@ -40,6 +40,7 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
     latitude = Column(Float)
     longitude = Column(Float)
     geocode_status = Column(String(20), default="pending")  # pending, success, failed, skipped
+    geocode_source = Column(String(20))  # address, campus, org, city, legacy, manual
 
     # Platform metadata
     platform = Column(String(50), nullable=False, index=True)
@@ -70,4 +71,5 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
         Index("idx_job_state_active", "state", "is_active"),
         Index("idx_job_last_run", "source_id", "last_seen_run_id"),
         Index("idx_job_removal", "is_active", "removal_detected_at"),
+        Index("idx_job_geocode_source", "geocode_source"),
     )
