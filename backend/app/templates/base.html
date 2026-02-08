@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token | default('', true) }}">
     <title>{% block title %}Texas Ed Jobs{% endblock %}</title>
 
     <!-- Tailwind CSS via CDN -->
@@ -51,7 +52,8 @@
 
     {% block head %}{% endblock %}
 </head>
-<body class="bg-base-100 min-h-screen flex flex-col">
+<body class="bg-base-100 min-h-screen flex flex-col"
+      hx-headers='{"X-CSRF-Token": "{{ csrf_token | default("", true) }}"}'>
     <!-- Navigation -->
     <div class="navbar bg-primary text-primary-content shadow-lg">
         <div class="navbar-start">
@@ -64,6 +66,10 @@
                 <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 text-base-content rounded-box w-52">
                     <li><a href="/">Find Jobs</a></li>
                     <li><a href="/orgs">Organizations</a></li>
+                    {% if current_user %}
+                    <li><a href="/for-you">For You</a></li>
+                    <li><a href="/saved-jobs">Saved Jobs</a></li>
+                    {% endif %}
                 </ul>
             </div>
             <a href="/" class="btn btn-ghost text-xl">Texas Ed Jobs</a>
@@ -72,9 +78,13 @@
             <ul class="menu menu-horizontal px-1">
                 <li><a href="/" class="hover:bg-primary-focus">Find Jobs</a></li>
                 <li><a href="/orgs" class="hover:bg-primary-focus">Organizations</a></li>
+                {% if current_user %}
+                <li><a href="/for-you" class="hover:bg-primary-focus">For You</a></li>
+                <li><a href="/saved-jobs" class="hover:bg-primary-focus">Saved Jobs</a></li>
+                {% endif %}
             </ul>
         </div>
-        <div class="navbar-end">
+        <div class="navbar-end gap-2">
             <!-- Theme toggle -->
             <label class="swap swap-rotate btn btn-ghost btn-circle">
                 <input type="checkbox" id="theme-toggle" onchange="toggleTheme()" />
@@ -87,6 +97,33 @@
                     <path d="M21.64,13a1,1,0,0,0-1.05-.14,8.05,8.05,0,0,1-3.37.73A8.15,8.15,0,0,1,9.08,5.49a8.59,8.59,0,0,1,.25-2A1,1,0,0,0,8,2.36,10.14,10.14,0,1,0,22,14.05,1,1,0,0,0,21.64,13Zm-9.5,6.69A8.14,8.14,0,0,1,7.08,5.22v.27A10.15,10.15,0,0,0,17.22,15.63a9.79,9.79,0,0,0,2.1-.22A8.11,8.11,0,0,1,12.14,19.73Z"/>
                 </svg>
             </label>
+
+            {% if current_user %}
+            <!-- User dropdown -->
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar placeholder">
+                    <div class="bg-neutral text-neutral-content rounded-full w-10">
+                        <span class="text-sm">{{ current_user.display_name[:2] | upper }}</span>
+                    </div>
+                </div>
+                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 text-base-content rounded-box w-52">
+                    <li class="menu-title"><span>{{ current_user.display_name }}</span></li>
+                    <li><a href="/saved-jobs">Saved Jobs</a></li>
+                    <li><a href="/for-you">For You</a></li>
+                    <li><a href="/account/password">Change Password</a></li>
+                    <li>
+                        <form method="post" action="/logout" class="p-0 m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token | default('', true) }}">
+                            <button type="submit" class="w-full text-left">Log Out</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+            {% else %}
+            <!-- Login / Register links -->
+            <a href="/login" class="btn btn-ghost btn-sm">Log In</a>
+            <a href="/register" class="btn btn-ghost btn-sm border border-primary-content/30">Register</a>
+            {% endif %}
         </div>
     </div>
 

@@ -1,0 +1,47 @@
+{# HTMX partial for paginated For You results #}
+{% for job in jobs %}
+<div class="card bg-base-100 shadow-sm hover:shadow-md transition-shadow border border-base-200"
+     data-lat="{{ job.latitude or '' }}"
+     data-lng="{{ job.longitude or '' }}">
+    <div class="card-body p-4">
+        <div class="flex items-start gap-2">
+            <a href="/jobs/{{ job.id }}" class="flex-1 min-w-0">
+                <h3 class="font-semibold text-sm leading-tight text-primary">{{ job.title }}</h3>
+                <p class="text-xs text-base-content/60 mt-1">{{ job.org_name | default("Unknown Organization") }}</p>
+                <div class="flex flex-wrap gap-1 mt-2">
+                    {% if job.category %}
+                    <span class="badge badge-primary badge-xs">{{ job.category }}</span>
+                    {% endif %}
+                    {% if job.city %}
+                    <span class="badge badge-ghost badge-xs">{{ job.city }}</span>
+                    {% endif %}
+                    {% if job.score is defined and job.score %}
+                    <span class="badge badge-accent badge-xs" title="Relevance score">{{ "%.0f" | format(job.score * 100) }}%</span>
+                    {% endif %}
+                </div>
+            </a>
+            <div class="flex items-center gap-0.5 shrink-0">
+                {% if current_user %}
+                {% set active_thumb = user_thumbs.get(job.id) if user_thumbs else None %}
+                {% set job_id = job.id %}
+                {% include "partials/thumbs_buttons.html" with context %}
+                {% set is_saved = job.id in saved_job_ids %}
+                {% include "partials/save_button.html" with context %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% if has_more %}
+<div class="mt-4 text-center">
+    <button class="btn btn-ghost btn-sm"
+            hx-get="/for-you/partial?page={{ page + 1 }}"
+            hx-target="#fy-more"
+            hx-swap="outerHTML">
+        Show more
+    </button>
+    <div id="fy-more"></div>
+</div>
+{% endif %}

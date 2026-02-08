@@ -14,7 +14,11 @@ from app.models.base import get_db
 from app.models.organization import Organization
 from app.models.job_posting import JobPosting
 from app.models.scrape_source import ScrapeSource
+from app.models.user import User
+from app.models.saved_job import SavedJob
+from app.models.user_interaction import UserInteraction
 from app.services.category_normalizer import get_all_categories
+from app.dependencies.auth import get_current_user, ensure_csrf_token
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -32,6 +36,30 @@ async def _get_total_sources(db: AsyncSession) -> int:
     )).scalar() or 0
 
 
+async def _ctx(request: Request, db: AsyncSession, **extra) -> dict:
+    """Build common template context with current_user, total_sources, csrf_token."""
+    user = await get_current_user(request, db)
+    total_sources = await _get_total_sources(db)
+    csrf_token = ensure_csrf_token(request)
+
+    # Load saved job IDs when logged in
+    saved_job_ids = set()
+    if user:
+        result = await db.execute(
+            select(SavedJob.job_posting_id).where(SavedJob.user_id == user.id)
+        )
+        saved_job_ids = {row[0] for row in result}
+
+    return {
+        "request": request,
+        "current_user": user,
+        "total_sources": total_sources,
+        "csrf_token": csrf_token,
+        "saved_job_ids": saved_job_ids,
+        **extra,
+    }
+
+
 async def _get_filter_options(db: AsyncSession) -> tuple[list[str], list[str]]:
     """Return (categories, platforms) for filter dropdowns."""
     categories = get_all_categories()
@@ -47,7 +75,6 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
         select(func.count(JobPosting.id)).where(JobPosting.is_active == True)
     )).scalar() or 0
 
-    total_sources = await _get_total_sources(db)
     categories, platforms = await _get_filter_options(db)
 
     # Orgs with active jobs for the ISD filter dropdown
@@ -62,17 +89,14 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
         for row in orgs_result
     ]
 
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "total_jobs": total_jobs,
-            "total_sources": total_sources,
-            "categories": categories,
-            "platforms": platforms,
-            "organizations": organizations,
-        },
+    ctx = await _ctx(request, db,
+        total_jobs=total_jobs,
+        categories=categories,
+        platforms=platforms,
+        organizations=organizations,
     )
+
+    return templates.TemplateResponse("index.html", ctx)
 
 
 @router.get("/jobs/partial", response_class=HTMLResponse)
@@ -189,19 +213,18 @@ async def jobs_partial(
         params["west"] = west
     more_url = f"/jobs/partial?{urlencode(params)}"
 
-    response = templates.TemplateResponse(
-        "partials/job_list.html",
-        {
-            "request": request,
-            "jobs": jobs,
-            "shown_total": shown_total,
-            "total_all": total_all,
-            "mode": mode,
-            "has_more": has_more,
-            "more_url": more_url,
-            "page": page,
-        },
+    # Get current user + saved job IDs for save buttons
+    ctx = await _ctx(request, db,
+        jobs=jobs,
+        shown_total=shown_total,
+        total_all=total_all,
+        mode=mode,
+        has_more=has_more,
+        more_url=more_url,
+        page=page,
     )
+
+    response = templates.TemplateResponse("partials/job_list.html", ctx)
 
     # HX-Trigger header so Alpine can update the count display
     response.headers["HX-Trigger"] = f'{{"jobsLoaded": {{"shown": {shown_total}, "total": {total_all}}}}}'
@@ -237,17 +260,37 @@ async def job_detail(request: Request, job_id: UUID, db: AsyncSession = Depends(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    total_sources = await _get_total_sources(db)
+    ctx = await _ctx(request, db, job=job, organization=job.organization)
 
-    return templates.TemplateResponse(
-        "jobs/detail.html",
-        {
-            "request": request,
-            "job": job,
-            "organization": job.organization,
-            "total_sources": total_sources,
-        },
-    )
+    # Record view interaction if logged in
+    if ctx["current_user"]:
+        interaction = UserInteraction(
+            user_id=ctx["current_user"].id,
+            job_posting_id=job_id,
+            interaction_type="view",
+        )
+        db.add(interaction)
+        # commit happens in get_db cleanup
+
+    # Get thumbs state for this job
+    user_thumbs = {}
+    if ctx["current_user"]:
+        thumbs_result = await db.execute(
+            select(UserInteraction.interaction_type)
+            .where(
+                UserInteraction.user_id == ctx["current_user"].id,
+                UserInteraction.job_posting_id == job_id,
+                UserInteraction.interaction_type.in_(["thumbs_up", "thumbs_down"]),
+            )
+            .order_by(UserInteraction.created_at.desc())
+            .limit(1)
+        )
+        row = thumbs_result.scalar_one_or_none()
+        if row:
+            user_thumbs[job_id] = row
+    ctx["user_thumbs"] = user_thumbs
+
+    return templates.TemplateResponse("jobs/detail.html", ctx)
 
 
 @router.get("/orgs", response_class=HTMLResponse)
@@ -260,16 +303,9 @@ async def orgs_list(
         select(func.count(Organization.id))
     )).scalar() or 0
 
-    total_sources = await _get_total_sources(db)
+    ctx = await _ctx(request, db, total_orgs=total_orgs)
 
-    return templates.TemplateResponse(
-        "orgs/list.html",
-        {
-            "request": request,
-            "total_orgs": total_orgs,
-            "total_sources": total_sources,
-        },
-    )
+    return templates.TemplateResponse("orgs/list.html", ctx)
 
 
 @router.get("/orgs/partial", response_class=HTMLResponse)
@@ -410,18 +446,13 @@ async def orgs_compare(
             "total_jobs": sum(categories.values()),
         })
 
-    total_sources = await _get_total_sources(db)
-
-    return templates.TemplateResponse(
-        "orgs/compare.html",
-        {
-            "request": request,
-            "orgs_data": orgs_data,
-            "all_categories": sorted(all_categories),
-            "ids": ids,
-            "total_sources": total_sources,
-        },
+    ctx = await _ctx(request, db,
+        orgs_data=orgs_data,
+        all_categories=sorted(all_categories),
+        ids=ids,
     )
+
+    return templates.TemplateResponse("orgs/compare.html", ctx)
 
 
 @router.get("/orgs/{org_id}", response_class=HTMLResponse)
@@ -479,8 +510,6 @@ async def org_detail(request: Request, org_id: UUID, db: AsyncSession = Depends(
     demographics_result = await db.execute(demographics_query)
     demographics = demographics_result.scalars().all()
 
-    total_sources = await _get_total_sources(db)
-
     # Build org with stats
     org_data = {
         "id": org.id,
@@ -500,15 +529,12 @@ async def org_detail(request: Request, org_id: UUID, db: AsyncSession = Depends(
         "active_job_count": job_count,
     }
 
-    return templates.TemplateResponse(
-        "orgs/detail.html",
-        {
-            "request": request,
-            "org": org_data,
-            "sources": sources,
-            "jobs": jobs,
-            "job_count": job_count,
-            "demographics": demographics,
-            "total_sources": total_sources,
-        },
+    ctx = await _ctx(request, db,
+        org=org_data,
+        sources=sources,
+        jobs=jobs,
+        job_count=job_count,
+        demographics=demographics,
     )
+
+    return templates.TemplateResponse("orgs/detail.html", ctx)

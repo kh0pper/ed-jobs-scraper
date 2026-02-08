@@ -17,7 +17,7 @@
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
             <div class="flex flex-col lg:flex-row justify-between items-start gap-4">
-                <div>
+                <div class="flex-1">
                     <h1 class="card-title text-3xl">{{ job.title }}</h1>
                     {% if organization %}
                     <a href="/orgs/{{ organization.id }}" class="text-xl text-primary hover:text-primary-focus mt-2 inline-block">
@@ -25,13 +25,28 @@
                     </a>
                     {% endif %}
                 </div>
-                <a href="{{ job.application_url }}" target="_blank" rel="noopener"
-                   class="btn btn-success btn-lg gap-2">
-                    Apply Now
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                </a>
+                <div class="flex items-center gap-2">
+                    {% if current_user %}
+                    <!-- Save button -->
+                    {% set job_id = job.id %}
+                    {% set is_saved = job.id in saved_job_ids %}
+                    {% include "partials/save_button.html" with context %}
+
+                    <!-- Thumbs buttons -->
+                    {% set active_thumb = user_thumbs.get(job.id) if user_thumbs else None %}
+                    {% include "partials/thumbs_buttons.html" with context %}
+                    {% endif %}
+
+                    <!-- Apply button with click tracking -->
+                    <a href="{{ job.application_url }}" target="_blank" rel="noopener"
+                       class="btn btn-success btn-lg gap-2"
+                       onclick="fetch('/api/v1/interactions/apply-click/{{ job.id }}', {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content}})">
+                        Apply Now
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                    </a>
+                </div>
             </div>
 
             <!-- Tags -->
@@ -188,7 +203,8 @@
             <!-- Apply Button (sticky) -->
             <div class="sticky top-4">
                 <a href="{{ job.application_url }}" target="_blank" rel="noopener"
-                   class="btn btn-success btn-block btn-lg gap-2">
+                   class="btn btn-success btn-block btn-lg gap-2"
+                   onclick="fetch('/api/v1/interactions/apply-click/{{ job.id }}', {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content}})">
                     Apply for this Position
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />

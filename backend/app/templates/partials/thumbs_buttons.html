@@ -1,0 +1,21 @@
+{# Thumbs up/down toggle buttons — HTMX swappable #}
+<div class="thumbs-wrap flex gap-1" id="thumbs-{{ job_id }}">
+    <button class="btn btn-ghost btn-xs {{ 'btn-success' if active_thumb == 'thumbs_up' else '' }}"
+            hx-post="/api/v1/interactions/thumbs/{{ job_id }}/up"
+            hx-target="#thumbs-{{ job_id }}"
+            hx-swap="outerHTML"
+            title="Thumbs up">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="{{ 'currentColor' if active_thumb == 'thumbs_up' else 'none' }}" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
+        </svg>
+    </button>
+    <button class="btn btn-ghost btn-xs {{ 'btn-error' if active_thumb == 'thumbs_down' else '' }}"
+            hx-post="/api/v1/interactions/thumbs/{{ job_id }}/down"
+            hx-target="#thumbs-{{ job_id }}"
+            hx-swap="outerHTML"
+            title="Thumbs down">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="{{ 'currentColor' if active_thumb == 'thumbs_down' else 'none' }}" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zM17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/>
+        </svg>
+    </button>
+</div>

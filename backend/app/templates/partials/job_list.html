@@ -24,23 +24,37 @@
 <!-- Job cards -->
 <div class="space-y-3">
     {% for job in jobs %}
-    <a href="/jobs/{{ job.id }}"
-       class="block card bg-base-100 shadow-sm hover:shadow-md transition-shadow border border-base-200 job-card"
-       data-lat="{{ job.latitude or '' }}"
-       data-lng="{{ job.longitude or '' }}">
+    <div class="card bg-base-100 shadow-sm hover:shadow-md transition-shadow border border-base-200 job-card"
+         data-lat="{{ job.latitude or '' }}"
+         data-lng="{{ job.longitude or '' }}">
         <div class="card-body p-4">
-            <h3 class="font-semibold text-sm leading-tight text-primary">{{ job.title }}</h3>
-            <p class="text-xs text-base-content/60 mt-1">{{ job.org_name | default("Unknown Organization") }}</p>
-            <div class="flex flex-wrap gap-1 mt-2">
-                {% if job.category %}
-                <span class="badge badge-primary badge-xs">{{ job.category }}</span>
-                {% endif %}
-                {% if job.city %}
-                <span class="badge badge-ghost badge-xs">{{ job.city }}</span>
+            <div class="flex items-start gap-2">
+                <a href="/jobs/{{ job.id }}" class="flex-1 min-w-0">
+                    <h3 class="font-semibold text-sm leading-tight text-primary">{{ job.title }}</h3>
+                    <p class="text-xs text-base-content/60 mt-1">{{ job.org_name | default("Unknown Organization") }}</p>
+                    <div class="flex flex-wrap gap-1 mt-2">
+                        {% if job.category %}
+                        <span class="badge badge-primary badge-xs">{{ job.category }}</span>
+                        {% endif %}
+                        {% if job.city %}
+                        <span class="badge badge-ghost badge-xs">{{ job.city }}</span>
+                        {% endif %}
+                    </div>
+                </a>
+                {% if current_user %}
+                <div class="flex items-center gap-0.5 shrink-0">
+                    {% if show_thumbs is defined and show_thumbs %}
+                    {% set active_thumb = user_thumbs.get(job.id) if user_thumbs else None %}
+                    {% include "partials/thumbs_buttons.html" with context %}
+                    {% endif %}
+                    {% set job_id = job.id %}
+                    {% set is_saved = job.id in saved_job_ids %}
+                    {% include "partials/save_button.html" with context %}
+                </div>
                 {% endif %}
             </div>
         </div>
-    </a>
+    </div>
     {% endfor %}
 </div>
 

@@ -6,9 +6,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import redis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +19,10 @@ from app.config import get_settings
 from app.models.base import engine, AsyncSessionLocal, Base
 from app.api.v1 import router as api_v1_router
 from app.routes.web import router as web_router
+from app.routes.auth import router as auth_router
+from app.routes.saved_jobs import router as saved_jobs_router
+from app.routes.for_you import router as for_you_router
+from app.dependencies.auth import NotAuthenticatedException
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -41,8 +47,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Middleware order: last added = outermost = runs first
+# 1. GZipMiddleware (innermost — compresses responses)
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+# 2. CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,10 +60,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 3. SessionMiddleware (outermost — manages session before routing)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key,
+    session_cookie="edjobs_session",
+    max_age=60 * 60 * 24 * 30,  # 30 days
+    same_site="lax",
+    https_only=False,
+)
+
+
+# Exception handler for auth redirects
+@app.exception_handler(NotAuthenticatedException)
+async def not_authenticated_handler(request: Request, exc: NotAuthenticatedException):
+    return RedirectResponse("/login", status_code=303)
+
+
 # Include API routers
 app.include_router(api_v1_router)
 
-# Include web routes (HTML pages)
+# Include web routes (HTML pages) — auth routes first so /login etc. match before /{path}
+app.include_router(auth_router)
+app.include_router(saved_jobs_router)
+app.include_router(for_you_router)
 app.include_router(web_router)
 
 # Static files

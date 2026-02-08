@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Log In - Texas Ed Jobs{% endblock %}
+
+{% block content %}
+<div class="flex justify-center items-start py-12">
+    <div class="card w-full max-w-md bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl justify-center mb-2">Log In</h2>
+
+            {% if error %}
+            <div class="alert alert-error text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>{{ error }}</span>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/login" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Email</span></label>
+                    <input type="email" name="email" required autofocus
+                           class="input input-bordered w-full" placeholder="you@example.com">
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Password</span></label>
+                    <input type="password" name="password" required
+                           class="input input-bordered w-full" placeholder="Enter your password">
+                </div>
+
+                <button type="submit" class="btn btn-primary w-full">Log In</button>
+            </form>
+
+            <div class="divider text-sm">or</div>
+
+            <p class="text-center text-sm">
+                Don't have an account?
+                <a href="/register" class="link link-primary font-medium">Register</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

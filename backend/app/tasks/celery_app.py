@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.scrape_tasks",
         "app.tasks.maintenance_tasks",
         "app.tasks.data_quality_tasks",
+        "app.tasks.profile_tasks",
     ],
 )
 
@@ -67,5 +68,13 @@ celery_app.conf.beat_schedule = {
     "derive-org-cities": {
         "task": "app.tasks.data_quality_tasks.derive_org_cities",
         "schedule": crontab(minute=45, hour=6),  # Daily at 6:45 AM
+    },
+    "batch-process-views": {
+        "task": "app.tasks.profile_tasks.batch_process_views",
+        "schedule": crontab(minute="*/10"),  # Every 10 minutes
+    },
+    "apply-profile-decay": {
+        "task": "app.tasks.profile_tasks.apply_profile_decay",
+        "schedule": crontab(minute=0, hour=3),  # Daily at 3 AM
     },
 }

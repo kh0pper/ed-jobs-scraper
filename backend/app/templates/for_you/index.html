@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}For You - Texas Ed Jobs{% endblock %}
+
+{% block main_class %}flex-grow{% endblock %}
+
+{% block head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+
+<style>
+    .fy-container {
+        height: calc(100vh - 64px);
+    }
+    #fy-panel {
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+    #fy-panel::-webkit-scrollbar {
+        width: 6px;
+    }
+    #fy-panel::-webkit-scrollbar-thumb {
+        background: oklch(var(--bc) / 0.2);
+        border-radius: 3px;
+    }
+    .marker-cluster-small { background-color: rgba(110, 204, 57, 0.6); }
+    .marker-cluster-small div { background-color: rgba(110, 204, 57, 0.9); }
+    .marker-cluster-medium { background-color: rgba(240, 194, 12, 0.6); }
+    .marker-cluster-medium div { background-color: rgba(240, 194, 12, 0.9); }
+    .marker-cluster-large { background-color: rgba(241, 128, 23, 0.6); }
+    .marker-cluster-large div { background-color: rgba(241, 128, 23, 0.9); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fy-container flex" x-data="forYou()" x-init="initMap()">
+    <!-- Job list panel -->
+    <div id="fy-panel" class="w-[480px] shrink-0 border-r border-base-200 p-4 hidden lg:block" style="height: 100%">
+        <div class="flex items-center justify-between mb-4">
+            <h1 class="text-2xl font-bold">For You</h1>
+        </div>
+
+        {% if is_cold_start %}
+        <!-- Cold start banner -->
+        <div class="alert alert-info mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="shrink-0 w-5 h-5 stroke-current">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <div>
+                <p class="text-sm font-medium">Personalize your feed</p>
+                <p class="text-xs">Save jobs, rate recommendations, and apply to help us learn your preferences.</p>
+                <progress class="progress progress-primary w-full mt-1" value="{{ active_interaction_count }}" max="{{ cold_start_threshold }}"></progress>
+                <p class="text-xs opacity-70">{{ active_interaction_count }}/{{ cold_start_threshold }} interactions</p>
+            </div>
+        </div>
+        {% else %}
+        <!-- Profile strength indicator -->
+        <div class="flex items-center gap-2 mb-4 text-sm">
+            <span class="badge badge-success badge-sm">Personalized</span>
+            <span class="text-base-content/50">{{ active_interaction_count }} interactions</span>
+        </div>
+        {% endif %}
+
+        <!-- Job cards -->
+        <div class="space-y-3" id="fy-jobs">
+            {% for job in jobs %}
+            <div class="card bg-base-100 shadow-sm hover:shadow-md transition-shadow border border-base-200"
+                 data-lat="{{ job.latitude or '' }}"
+                 data-lng="{{ job.longitude or '' }}">
+                <div class="card-body p-4">
+                    <div class="flex items-start gap-2">
+                        <a href="/jobs/{{ job.id }}" class="flex-1 min-w-0">
+                            <h3 class="font-semibold text-sm leading-tight text-primary">{{ job.title }}</h3>
+                            <p class="text-xs text-base-content/60 mt-1">{{ job.org_name | default("Unknown Organization") }}</p>
+                            <div class="flex flex-wrap gap-1 mt-2">
+                                {% if job.category %}
+                                <span class="badge badge-primary badge-xs">{{ job.category }}</span>
+                                {% endif %}
+                                {% if job.city %}
+                                <span class="badge badge-ghost badge-xs">{{ job.city }}</span>
+                                {% endif %}
+                                {% if job.score is defined and job.score %}
+                                <span class="badge badge-accent badge-xs" title="Relevance score">{{ "%.0f" | format(job.score * 100) }}%</span>
+                                {% endif %}
+                            </div>
+                        </a>
+                        <div class="flex items-center gap-0.5 shrink-0">
+                            {% set active_thumb = user_thumbs.get(job.id) if user_thumbs else None %}
+                            {% set job_id = job.id %}
+                            {% include "partials/thumbs_buttons.html" with context %}
+                            {% set is_saved = job.id in saved_job_ids %}
+                            {% include "partials/save_button.html" with context %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if has_more %}
+        <div class="mt-4 text-center">
+            <button class="btn btn-ghost btn-sm"
+                    hx-get="/for-you/partial?page={{ page + 1 }}"
+                    hx-target="#fy-more"
+                    hx-swap="outerHTML">
+                Show more
+            </button>
+            <div id="fy-more"></div>
+        </div>
+        {% endif %}
+
+        {% if not jobs %}
+        <div class="flex flex-col items-center justify-center py-12 text-base-content/50">
+            <p class="text-sm font-medium">No recommendations yet</p>
+            <p class="text-xs mt-1">Start exploring jobs to build your profile.</p>
+            <a href="/" class="btn btn-primary btn-sm mt-4">Find Jobs</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Map panel -->
+    <div class="flex-1 relative">
+        <div id="fy-map" class="w-full h-full"></div>
+    </div>
+
+    <!-- Mobile: show list below map -->
+    <div class="lg:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[1100]">
+        <a href="#fy-panel" class="btn btn-primary btn-sm shadow-lg">
+            View List ({{ jobs | length }})
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+
+<script>
+function forYou() {
+    return {
+        map: null,
+        markerCluster: null,
+
+        initMap() {
+            this.$nextTick(() => {
+                this.map = L.map('fy-map').setView([31.0, -100.0], 6);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(this.map);
+
+                this.markerCluster = L.markerClusterGroup({
+                    chunkedLoading: true,
+                    maxClusterRadius: 50,
+                    showCoverageOnHover: false,
+                });
+                this.map.addLayer(this.markerCluster);
+
+                // Add markers from job cards
+                const cards = document.querySelectorAll('#fy-jobs .card');
+                const markers = [];
+                cards.forEach(card => {
+                    const lat = parseFloat(card.dataset.lat);
+                    const lng = parseFloat(card.dataset.lng);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        const title = card.querySelector('h3')?.textContent || '';
+                        const org = card.querySelector('p')?.textContent || '';
+                        const link = card.querySelector('a')?.href || '#';
+                        const marker = L.marker([lat, lng]);
+                        marker.bindPopup(`<b>${title}</b><br>${org}<br><a href="${link}">View Details</a>`);
+                        markers.push(marker);
+                    }
+                });
+                this.markerCluster.addLayers(markers);
+
+                // Fit bounds if we have markers
+                if (markers.length > 0) {
+                    const group = L.featureGroup(markers);
+                    this.map.fitBounds(group.getBounds().pad(0.1));
+                }
+            });
+        }
+    };
+}
+</script>
+{% endblock %}
