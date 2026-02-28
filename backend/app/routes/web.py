@@ -17,6 +17,7 @@ from app.models.scrape_source import ScrapeSource
 from app.models.user import User
 from app.models.saved_job import SavedJob
 from app.models.user_interaction import UserInteraction
+from app.models.application import Application
 from app.services.category_normalizer import get_all_categories
 from app.dependencies.auth import get_current_user, ensure_csrf_token
 
@@ -42,13 +43,20 @@ async def _ctx(request: Request, db: AsyncSession, **extra) -> dict:
     total_sources = await _get_total_sources(db)
     csrf_token = ensure_csrf_token(request)
 
-    # Load saved job IDs when logged in
+    # Load saved job IDs and application statuses when logged in
     saved_job_ids = set()
+    application_statuses = {}
     if user:
         result = await db.execute(
             select(SavedJob.job_posting_id).where(SavedJob.user_id == user.id)
         )
         saved_job_ids = {row[0] for row in result}
+
+        app_result = await db.execute(
+            select(Application.job_posting_id, Application.status)
+            .where(Application.user_id == user.id, Application.status != "failed")
+        )
+        application_statuses = {row[0]: row[1] for row in app_result}
 
     return {
         "request": request,
@@ -56,6 +64,7 @@ async def _ctx(request: Request, db: AsyncSession, **extra) -> dict:
         "total_sources": total_sources,
         "csrf_token": csrf_token,
         "saved_job_ids": saved_job_ids,
+        "application_statuses": application_statuses,
         **extra,
     }
 

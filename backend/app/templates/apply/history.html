@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Application History — Texas Ed Jobs{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold mb-6">Application History</h1>
+
+    {% if applications %}
+    <div class="overflow-x-auto">
+        <table class="table table-zebra">
+            <thead>
+                <tr>
+                    <th>Job</th>
+                    <th>Organization</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in applications %}
+                {% set app = row.application %}
+                <tr>
+                    <td class="max-w-xs truncate">{{ row.job_title or 'Unknown' }}</td>
+                    <td>{{ row.org_name or '' }}</td>
+                    <td>
+                        {% if app.status == 'submitted' %}
+                        <span class="badge badge-success">Submitted</span>
+                        {% elif app.status == 'failed' %}
+                        <span class="badge badge-error">Failed</span>
+                        {% elif app.status == 'reviewing' %}
+                        <span class="badge badge-info">Review</span>
+                        {% else %}
+                        <span class="badge badge-warning">{{ app.status | title }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-sm">{{ app.created_at.strftime('%b %d, %Y') if app.created_at else '' }}</td>
+                    <td>
+                        <a href="/apply/{{ app.job_posting_id }}/status" class="btn btn-ghost btn-xs">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center py-12">
+        <p class="text-base-content/60 text-lg mb-4">No applications yet.</p>
+        <a href="/" class="btn btn-primary">Find Jobs</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

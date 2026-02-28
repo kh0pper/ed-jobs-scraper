@@ -27,6 +27,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnspr4 \
     libnss3 \
     xvfb \
+    # WeasyPrint dependencies
+    libpangocairo-1.0-0 \
+    libpangoft2-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    gir1.2-pango-1.0 \
+    libgirepository1.0-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Python dependencies

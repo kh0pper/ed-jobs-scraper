@@ -2,7 +2,9 @@
 
 from uuid import UUID
 
-from sqlalchemy import select, func, text, case
+import json
+
+from sqlalchemy import select, func, text, case, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job_posting import JobPosting
@@ -57,30 +59,23 @@ async def _personalized_query(
     if not profile:
         return await _cold_start_query(db, limit, offset)
 
-    # Build SQL scoring expression using JSONB ->> operator
+    # Build SQL scoring expression using JSONB ->> operator with literal_column
     # score = category_match * 0.35 + city_match * 0.30 + region_match * 0.15
     #       + org_type_match * 0.10 + recency * 0.10
-    #
-    # We use text() for the JSONB lookups since SQLAlchemy's JSONB operators
-    # are cumbersome for dynamic key lookups.
+    # JSON comes from our own user_interest_profiles table, not user input.
+    cat_json = json.dumps(profile.category_scores or {}).replace("'", "''")
+    city_json = json.dumps(profile.city_scores or {}).replace("'", "''")
+    region_json = json.dumps(profile.region_scores or {}).replace("'", "''")
+    org_type_json = json.dumps(profile.org_type_scores or {}).replace("'", "''")
 
-    score_expr = text("""
-        (
-            COALESCE((:cat_scores ::jsonb ->> job_postings.category)::float, 0.5) * 0.35 +
-            COALESCE((:city_scores ::jsonb ->> job_postings.city)::float, 0.5) * 0.30 +
-            COALESCE((:region_scores ::jsonb ->> organizations.esc_region::text)::float, 0.5) * 0.15 +
-            COALESCE((:org_type_scores ::jsonb ->> organizations.org_type)::float, 0.5) * 0.10 +
-            POWER(0.5, EXTRACT(EPOCH FROM (NOW() - job_postings.first_seen_at)) / 604800.0) * 0.10
-        )
-    """)
-
-    import json
-    params = {
-        "cat_scores": json.dumps(profile.category_scores or {}),
-        "city_scores": json.dumps(profile.city_scores or {}),
-        "region_scores": json.dumps(profile.region_scores or {}),
-        "org_type_scores": json.dumps(profile.org_type_scores or {}),
-    }
+    score_sql = f"""(
+        COALESCE(('{cat_json}'::jsonb ->> job_postings.category)::float, 0.5) * 0.35 +
+        COALESCE(('{city_json}'::jsonb ->> job_postings.city)::float, 0.5) * 0.30 +
+        COALESCE(('{region_json}'::jsonb ->> organizations.esc_region::text)::float, 0.5) * 0.15 +
+        COALESCE(('{org_type_json}'::jsonb ->> organizations.org_type)::float, 0.5) * 0.10 +
+        POWER(0.5, EXTRACT(EPOCH FROM (NOW() - job_postings.first_seen_at)) / 604800.0) * 0.10
+    )"""
+    score_expr = literal_column(score_sql)
 
     # Count total active jobs
     count_result = await db.execute(
@@ -112,7 +107,7 @@ async def _personalized_query(
         .limit(limit)
     )
 
-    result = await db.execute(query, params)
+    result = await db.execute(query)
 
     jobs = []
     for row in result.mappings():
@@ -161,25 +156,22 @@ async def _cold_start_query(
             ).label("pop_score"),
         )
         .group_by(UserInteraction.job_posting_id)
-        .subquery()
+        .subquery("pop_sub")
     )
 
-    # Recency: 7-day half-life
-    recency_expr = text("POWER(0.5, EXTRACT(EPOCH FROM (NOW() - job_postings.first_seen_at)) / 604800.0)")
-
-    # Combined cold start score
+    # Combined cold start score: popularity (0.6) + recency with 7-day half-life (0.4)
     # Normalize popularity to [0, 1] — use GREATEST to avoid div by zero
-    cold_score = text("""
-        (COALESCE(pop_sub.pop_score, 0) / GREATEST((SELECT MAX(pop_sub2.pop_score) FROM (
+    cold_score = literal_column("""(
+        COALESCE(pop_sub.pop_score, 0) / GREATEST((SELECT MAX(pop_sub2.pop_score) FROM (
             SELECT job_posting_id,
                    COUNT(*) FILTER (WHERE interaction_type = 'save') * 0.4
                  + COUNT(*) FILTER (WHERE interaction_type = 'apply_click') * 0.3
                  + COUNT(*) FILTER (WHERE interaction_type = 'thumbs_up') * 0.2
                  + COUNT(*) FILTER (WHERE interaction_type = 'view') * 0.1 AS pop_score
             FROM user_interactions GROUP BY job_posting_id
-        ) pop_sub2), 1.0)) * 0.6
+        ) pop_sub2), 1.0) * 0.6
         + POWER(0.5, EXTRACT(EPOCH FROM (NOW() - job_postings.first_seen_at)) / 604800.0) * 0.4
-    """)
+    )""")
 
     query = (
         select(
@@ -195,11 +187,12 @@ async def _cold_start_query(
             JobPosting.first_seen_at,
             Organization.name.label("org_name"),
             Organization.id.label("org_id"),
+            cold_score.label("score"),
         )
         .outerjoin(Organization, JobPosting.organization_id == Organization.id)
         .outerjoin(popularity_sub, JobPosting.id == popularity_sub.c.job_posting_id)
         .where(JobPosting.is_active == True)
-        .order_by(JobPosting.first_seen_at.desc())  # Simple fallback: newest first
+        .order_by(text("score DESC"))
         .offset(offset)
         .limit(limit)
     )
@@ -219,6 +212,7 @@ async def _cold_start_query(
             "latitude": row["latitude"],
             "longitude": row["longitude"],
             "posting_date": row["posting_date"],
+            "score": float(row["score"]) if row["score"] else 0,
         })
 
     return jobs, total

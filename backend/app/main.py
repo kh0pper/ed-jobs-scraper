@@ -22,6 +22,8 @@ from app.routes.web import router as web_router
 from app.routes.auth import router as auth_router
 from app.routes.saved_jobs import router as saved_jobs_router
 from app.routes.for_you import router as for_you_router
+from app.routes.apply import router as apply_router
+from app.routes.digest import router as digest_router
 from app.dependencies.auth import NotAuthenticatedException
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,8 @@ app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.include_router(saved_jobs_router)
 app.include_router(for_you_router)
+app.include_router(apply_router)
+app.include_router(digest_router)
 app.include_router(web_router)
 
 # Static files
@@ -93,6 +97,15 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 boundaries_dir = "/app/data/boundaries" if os.path.isdir("/app/data/boundaries") else "data/boundaries"
 if os.path.isdir(boundaries_dir):
     app.mount("/data/boundaries", StaticFiles(directory=boundaries_dir), name="boundaries")
+
+# Generated PDFs and screenshots (Easy Apply pipeline)
+pdfs_dir = "/app/data/pdfs" if os.path.isdir("/app/data/pdfs") else "data/pdfs"
+if os.path.isdir(pdfs_dir):
+    app.mount("/data/pdfs", StaticFiles(directory=pdfs_dir), name="pdfs")
+
+screenshots_dir = "/app/data/screenshots" if os.path.isdir("/app/data/screenshots") else "data/screenshots"
+if os.path.isdir(screenshots_dir):
+    app.mount("/data/screenshots", StaticFiles(directory=screenshots_dir), name="screenshots")
 
 
 @app.get("/health")

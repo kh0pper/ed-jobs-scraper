@@ -1,0 +1,21 @@
+{# Easy Apply button for job cards and detail pages.
+   Requires: job_id, csrf_token, current_user (optional), application_status (optional) #}
+
+{% if current_user %}
+    {% if application_status %}
+        {% if application_status == 'submitted' %}
+        <span class="badge badge-success badge-sm">Applied</span>
+        {% elif application_status == 'failed' %}
+        <a href="/apply/{{ job_id }}/status" class="badge badge-error badge-sm">Failed</a>
+        {% elif application_status == 'reviewing' %}
+        <a href="/apply/{{ job_id }}/review" class="badge badge-info badge-sm">Review</a>
+        {% else %}
+        <a href="/apply/{{ job_id }}/status" class="badge badge-warning badge-sm">{{ application_status | title }}</a>
+        {% endif %}
+    {% else %}
+    <form method="post" action="/apply/{{ job_id }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-primary btn-xs">Easy Apply</button>
+    </form>
+    {% endif %}
+{% endif %}

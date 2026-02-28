@@ -89,8 +89,10 @@
                             </div>
                         </a>
                         <div class="flex items-center gap-0.5 shrink-0">
-                            {% set active_thumb = user_thumbs.get(job.id) if user_thumbs else None %}
                             {% set job_id = job.id %}
+                            {% set application_status = application_statuses.get(job.id) if application_statuses is defined else None %}
+                            {% include "partials/apply_button.html" with context %}
+                            {% set active_thumb = user_thumbs.get(job.id) if user_thumbs else None %}
                             {% include "partials/thumbs_buttons.html" with context %}
                             {% set is_saved = job.id in saved_job_ids %}
                             {% include "partials/save_button.html" with context %}

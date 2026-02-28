@@ -36,14 +36,17 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        <!-- Apply button -->
+                        <!-- Easy Apply -->
+                        {% set job_id = job.id %}
+                        {% set application_status = application_statuses.get(job.id) if application_statuses is defined else None %}
+                        {% include "partials/apply_button.html" with context %}
+                        <!-- Direct Apply button -->
                         <a href="{{ job.application_url }}" target="_blank" rel="noopener"
                            class="btn btn-success btn-sm"
                            onclick="fetch('/api/v1/interactions/apply-click/{{ job.id }}', {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content}})">
                             Apply
                         </a>
                         <!-- Unsave button -->
-                        {% set job_id = job.id %}
                         {% set is_saved = true %}
                         {% include "partials/save_button.html" with context %}
                     </div>

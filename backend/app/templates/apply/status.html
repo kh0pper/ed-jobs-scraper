@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Application Status — Texas Ed Jobs{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    {% if job %}
+    <h1 class="text-2xl font-bold mb-1">{{ job.title }}</h1>
+    <p class="text-base-content/70 mb-6">{{ org_name or 'Unknown Organization' }}</p>
+    {% endif %}
+
+    <div id="status-container"
+         {% if application and application.status not in ('reviewing', 'failed', 'submitted', 'filling') %}
+         hx-get="/apply/{{ job.id if job else '' }}/status/partial"
+         hx-trigger="load delay:3s"
+         hx-swap="innerHTML"
+         {% endif %}>
+        {% include "partials/apply_status.html" %}
+    </div>
+
+    {% if application %}
+    <div class="mt-6 flex gap-3">
+        {% if application.status == 'reviewing' %}
+        <a href="/apply/{{ job.id }}/review" class="btn btn-primary">Review Documents</a>
+        {% elif application.status == 'filling' %}
+        <a href="/apply/{{ job.id }}/preview" class="btn btn-primary">Preview Form</a>
+        {% elif application.status == 'failed' %}
+        <form method="post" action="/apply/{{ job.id }}/retry">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-warning">Retry</button>
+        </form>
+        {% endif %}
+        <a href="/applications" class="btn btn-ghost">All Applications</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

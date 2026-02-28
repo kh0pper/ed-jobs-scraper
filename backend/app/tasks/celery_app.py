@@ -16,6 +16,8 @@ celery_app = Celery(
         "app.tasks.maintenance_tasks",
         "app.tasks.data_quality_tasks",
         "app.tasks.profile_tasks",
+        "app.tasks.apply_tasks",
+        "app.tasks.digest_tasks",
     ],
 )
 
@@ -30,6 +32,10 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    task_routes={
+        "app.tasks.apply_tasks.fill_application": {"queue": "apply"},
+        "app.tasks.apply_tasks.submit_application": {"queue": "apply"},
+    },
 )
 
 celery_app.conf.beat_schedule = {
@@ -76,5 +82,13 @@ celery_app.conf.beat_schedule = {
     "apply-profile-decay": {
         "task": "app.tasks.profile_tasks.apply_profile_decay",
         "schedule": crontab(minute=0, hour=3),  # Daily at 3 AM
+    },
+    "send-weekly-digests": {
+        "task": "app.tasks.digest_tasks.send_weekly_digests",
+        "schedule": crontab(hour=8, minute=0, day_of_week=1),  # Monday 8 AM CT
+    },
+    "cleanup-old-screenshots": {
+        "task": "app.tasks.apply_tasks.cleanup_old_screenshots",
+        "schedule": crontab(hour=3, minute=0, day_of_week=0),  # Sunday 3 AM
     },
 }

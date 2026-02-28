@@ -19,3 +19,6 @@ class User(UUIDMixin, TimestampMixin, Base):
     saved_jobs = relationship("SavedJob", back_populates="user", cascade="all, delete-orphan")
     interactions = relationship("UserInteraction", back_populates="user", cascade="all, delete-orphan")
     interest_profile = relationship("UserInterestProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    applicant_profile = relationship("ApplicantProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    digest_preference = relationship("DigestPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")

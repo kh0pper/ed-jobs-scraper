@@ -11,6 +11,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./scripts:/app/scripts
+      - ./config:/app/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +50,32 @@ services:
       start_period: 30s
     restart: unless-stopped
     mem_limit: 2g
+
+  celery_apply_worker:
+    build: ./backend
+    container_name: edjobs_celery_apply_worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1 -Q apply
+    env_file: .env
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./scripts:/app/scripts
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping", "-t", "10"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    mem_limit: 3g
 
   celery_beat:
     build: ./backend

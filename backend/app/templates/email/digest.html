@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texas Ed Jobs — Weekly Digest</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f5f7; font-family:Arial,Helvetica,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7; padding:20px 0;">
+        <tr>
+            <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color:#570df8; color:#ffffff; padding:24px 30px;">
+                            <h1 style="margin:0; font-size:24px;">Texas Ed Jobs</h1>
+                            <p style="margin:6px 0 0; font-size:14px; opacity:0.9;">
+                                Weekly Digest — {{ digest.date_range[0].strftime('%b %d') }} to {{ digest.date_range[1].strftime('%b %d, %Y') }}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Stats -->
+                    <tr>
+                        <td style="padding:20px 30px; border-bottom:1px solid #e5e7eb;">
+                            <p style="margin:0; font-size:16px; color:#374151;">
+                                Hi {{ user.display_name }},
+                            </p>
+                            <p style="margin:8px 0 0; font-size:14px; color:#6b7280;">
+                                <strong style="color:#374151;">{{ digest.total_new }}</strong> new jobs posted this week
+                                across <strong style="color:#374151;">{{ digest.categories | length }}</strong> categories.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Jobs by Category -->
+                    {% for category, jobs in digest.jobs_by_category.items() %}
+                    <tr>
+                        <td style="padding:16px 30px 8px;">
+                            <h2 style="margin:0; font-size:16px; color:#570df8; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
+                                {{ category }} ({{ jobs | length }})
+                            </h2>
+                        </td>
+                    </tr>
+                    {% for job in jobs[:5] %}
+                    <tr>
+                        <td style="padding:8px 30px;">
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td>
+                                        <a href="{{ digest.app_url }}/jobs/{{ job.id }}" style="color:#1e40af; text-decoration:none; font-size:14px; font-weight:600;">
+                                            {{ job.title }}
+                                        </a>
+                                        <p style="margin:2px 0 0; font-size:13px; color:#6b7280;">
+                                            {{ job.org_name }}{% if job.city %} — {{ job.city }}{% endif %}
+                                        </p>
+                                    </td>
+                                    <td width="100" align="right" valign="top">
+                                        {% if job.application_status %}
+                                        <span style="font-size:11px; color:#059669; font-weight:600;">{{ job.application_status | title }}</span>
+                                        {% else %}
+                                        <a href="{{ job.easy_apply_url }}" style="display:inline-block; padding:4px 12px; background-color:#570df8; color:#ffffff; text-decoration:none; border-radius:4px; font-size:12px;">
+                                            Easy Apply
+                                        </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if jobs | length > 5 %}
+                    <tr>
+                        <td style="padding:4px 30px 12px;">
+                            <a href="{{ digest.app_url }}/for-you" style="font-size:12px; color:#570df8;">
+                                + {{ jobs | length - 5 }} more {{ category }} jobs
+                            </a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+
+                    <!-- CTA -->
+                    <tr>
+                        <td style="padding:20px 30px; text-align:center; border-top:1px solid #e5e7eb;">
+                            <a href="{{ digest.app_url }}/for-you" style="display:inline-block; padding:10px 24px; background-color:#570df8; color:#ffffff; text-decoration:none; border-radius:6px; font-size:14px; font-weight:600;">
+                                View All Recommendations
+                            </a>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding:16px 30px; background-color:#f9fafb; border-top:1px solid #e5e7eb;">
+                            <p style="margin:0; font-size:12px; color:#9ca3af; text-align:center;">
+                                <a href="{{ unsubscribe_url }}" style="color:#9ca3af;">Unsubscribe</a> |
+                                <a href="{{ digest.app_url }}/digest/preferences" style="color:#9ca3af;">Preferences</a>
+                            </p>
+                            <p style="margin:8px 0 0; font-size:11px; color:#d1d5db; text-align:center;">
+                                Texas Ed Jobs — Houston, TX
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

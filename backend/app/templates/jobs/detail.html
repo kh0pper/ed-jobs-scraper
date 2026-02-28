@@ -35,9 +35,28 @@
                     <!-- Thumbs buttons -->
                     {% set active_thumb = user_thumbs.get(job.id) if user_thumbs else None %}
                     {% include "partials/thumbs_buttons.html" with context %}
+
+                    <!-- Easy Apply button -->
+                    {% set application_status = application_statuses.get(job.id) if application_statuses is defined else None %}
+                    {% if application_status %}
+                        {% if application_status == 'submitted' %}
+                        <span class="badge badge-success">Applied</span>
+                        {% elif application_status == 'failed' %}
+                        <a href="/apply/{{ job.id }}/status" class="badge badge-error">Failed</a>
+                        {% elif application_status == 'reviewing' %}
+                        <a href="/apply/{{ job.id }}/review" class="btn btn-info btn-md">Review Docs</a>
+                        {% else %}
+                        <a href="/apply/{{ job.id }}/status" class="btn btn-warning btn-md">{{ application_status | title }}</a>
+                        {% endif %}
+                    {% else %}
+                    <form method="post" action="/apply/{{ job.id }}" class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-primary btn-md">Easy Apply</button>
+                    </form>
+                    {% endif %}
                     {% endif %}
 
-                    <!-- Apply button with click tracking -->
+                    <!-- Direct Apply button -->
                     <a href="{{ job.application_url }}" target="_blank" rel="noopener"
                        class="btn btn-success btn-lg gap-2"
                        onclick="fetch('/api/v1/interactions/apply-click/{{ job.id }}', {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content}})">
@@ -200,12 +219,23 @@
             </div>
             {% endif %}
 
-            <!-- Apply Button (sticky) -->
-            <div class="sticky top-4">
+            <!-- Apply Buttons (sticky) -->
+            <div class="sticky top-4 space-y-2">
+                {% if current_user and not (application_statuses is defined and application_statuses.get(job.id)) %}
+                <form method="post" action="/apply/{{ job.id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-primary btn-block btn-lg gap-2">
+                        Easy Apply
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </button>
+                </form>
+                {% endif %}
                 <a href="{{ job.application_url }}" target="_blank" rel="noopener"
                    class="btn btn-success btn-block btn-lg gap-2"
                    onclick="fetch('/api/v1/interactions/apply-click/{{ job.id }}', {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content}})">
-                    Apply for this Position
+                    Apply Directly
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>

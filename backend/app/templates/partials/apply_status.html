@@ -1,0 +1,53 @@
+{% if application %}
+{% set steps = ['pending', 'extracting', 'generating', 'reviewing', 'filling', 'submitted'] %}
+{% set step_labels = {'pending': 'Queued', 'extracting': 'Extracting Details', 'generating': 'Generating Documents', 'reviewing': 'Review', 'filling': 'Filling Form', 'submitted': 'Submitted'} %}
+{% set current_idx = steps.index(application.status) if application.status in steps else -1 %}
+
+<ul class="steps steps-vertical lg:steps-horizontal w-full mb-6">
+    {% for step in steps %}
+    {% set idx = loop.index0 %}
+    <li class="step
+        {% if application.status == 'failed' and application.error_step %}
+            {% set fail_step_map = {'extraction': 'extracting', 'generation': 'generating', 'ai_validation': 'generating', 'formatting': 'generating', 'form_fill': 'filling', 'job_removed': 'filling', 'submission': 'submitted'} %}
+            {% if step == fail_step_map.get(application.error_step, '') %}step-error
+            {% elif idx < current_idx %}step-primary
+            {% endif %}
+        {% elif idx <= current_idx %}step-primary
+        {% endif %}
+    ">{{ step_labels[step] }}</li>
+    {% endfor %}
+</ul>
+
+{% if application.status == 'failed' %}
+<div class="alert alert-error">
+    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    <div>
+        <p class="font-semibold">Failed at: {{ application.error_step or 'unknown' }}</p>
+        <p class="text-sm">{{ application.error_message or 'Unknown error' }}</p>
+    </div>
+</div>
+{% elif application.status == 'submitted' %}
+<div class="alert alert-success">
+    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    <span>Application submitted successfully!</span>
+</div>
+{% elif application.status == 'reviewing' %}
+<div class="alert alert-info">
+    <span>Documents ready for review. Click "Review Documents" to approve.</span>
+</div>
+{% elif application.status in ('pending', 'extracting', 'generating') %}
+<div class="flex items-center gap-3 p-4">
+    <span class="loading loading-spinner loading-md"></span>
+    <span>{{ step_labels.get(application.status, 'Processing') }}...</span>
+</div>
+{% elif application.status == 'filling' %}
+<div class="alert alert-info">
+    <span>Form filling in progress. Screenshots will be ready for review shortly.</span>
+</div>
+{% endif %}
+
+{% else %}
+<div class="alert alert-warning">
+    <span>No active application found for this job.</span>
+</div>
+{% endif %}

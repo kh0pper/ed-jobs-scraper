@@ -29,6 +29,25 @@ class Settings(BaseSettings):
     scrape_timeout: int = 120
     max_browser_pages: int = 3
 
+    # Z.ai (AI generation)
+    zai_api_key: str = ""
+    zai_base_url: str = "https://api.z.ai/api/coding/paas/v4"
+    zai_model_routine: str = "glm-4.5v"
+    zai_model_complex: str = "glm-4.7"
+
+    # Google Docs/Drive
+    google_credentials_file: str = "/app/config/google_credentials.json"
+
+    # Email (Gmail SMTP)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+
+    # Easy Apply pipeline
+    apply_pdf_dir: str = "/app/data/pdfs"
+    apply_screenshot_dir: str = "/app/data/screenshots"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

@@ -69,6 +69,7 @@
                     {% if current_user %}
                     <li><a href="/for-you">For You</a></li>
                     <li><a href="/saved-jobs">Saved Jobs</a></li>
+                    <li><a href="/applications">Applications</a></li>
                     {% endif %}
                 </ul>
             </div>
@@ -81,6 +82,7 @@
                 {% if current_user %}
                 <li><a href="/for-you" class="hover:bg-primary-focus">For You</a></li>
                 <li><a href="/saved-jobs" class="hover:bg-primary-focus">Saved Jobs</a></li>
+                <li><a href="/applications" class="hover:bg-primary-focus">Applications</a></li>
                 {% endif %}
             </ul>
         </div>
@@ -110,6 +112,10 @@
                     <li class="menu-title"><span>{{ current_user.display_name }}</span></li>
                     <li><a href="/saved-jobs">Saved Jobs</a></li>
                     <li><a href="/for-you">For You</a></li>
+                    <li><a href="/applications">Applications</a></li>
+                    <li class="menu-title mt-2"><span>Settings</span></li>
+                    <li><a href="/apply/profile">Applicant Profile</a></li>
+                    <li><a href="/digest/preferences">Email Digest</a></li>
                     <li><a href="/account/password">Change Password</a></li>
                     <li>
                         <form method="post" action="/logout" class="p-0 m-0">

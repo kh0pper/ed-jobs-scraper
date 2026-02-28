@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Digest Preferences — Texas Ed Jobs{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <h1 class="text-2xl font-bold mb-2">Email Digest</h1>
+    <p class="text-base-content/70 mb-6">Get a weekly email with new job postings matching your preferences.</p>
+
+    {% if request.query_params.get('saved') %}
+    <div class="alert alert-success mb-4">Preferences saved.</div>
+    {% endif %}
+    {% if request.query_params.get('sent') %}
+    <div class="alert alert-info mb-4">Digest email sent! Check your inbox.</div>
+    {% endif %}
+
+    <form method="post" action="/digest/preferences" class="space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div class="card bg-base-200 shadow">
+            <div class="card-body">
+                <!-- Enable/Disable -->
+                <div class="form-control">
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" name="is_enabled" value="on"
+                               class="toggle toggle-primary"
+                               {{ 'checked' if not pref or pref.is_enabled else '' }}>
+                        <span class="label-text text-lg font-medium">Enable weekly digest</span>
+                    </label>
+                </div>
+
+                <!-- Day of Week -->
+                <div class="form-control mt-4">
+                    <label class="label"><span class="label-text">Send on</span></label>
+                    <select name="day_of_week" class="select select-bordered w-full max-w-xs">
+                        {% set days = {0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday'} %}
+                        {% for value, name in days.items() %}
+                        <option value="{{ value }}" {{ 'selected' if pref and pref.day_of_week == value else ('selected' if not pref and value == 1 else '') }}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Max Jobs -->
+                <div class="form-control mt-4">
+                    <label class="label"><span class="label-text">Max jobs per digest</span></label>
+                    <input type="number" name="max_jobs" value="{{ pref.max_jobs if pref else 20 }}"
+                           min="5" max="50" class="input input-bordered w-full max-w-xs">
+                </div>
+
+                <!-- Category Filter -->
+                <div class="form-control mt-4">
+                    <label class="label"><span class="label-text">Categories (leave empty for all)</span></label>
+                    <textarea name="categories_json" class="textarea textarea-bordered font-mono text-sm" rows="2"
+                              placeholder='["Teacher", "Administrator"]'>{{ (pref.categories or '') | tojson if pref and pref.categories else '' }}</textarea>
+                </div>
+
+                <!-- Region Filter -->
+                <div class="form-control mt-4">
+                    <label class="label"><span class="label-text">ESC Regions (leave empty for all)</span></label>
+                    <textarea name="regions_json" class="textarea textarea-bordered font-mono text-sm" rows="2"
+                              placeholder='[4, 10, 13]'>{{ (pref.regions or '') | tojson if pref and pref.regions else '' }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-center">
+            <form method="post" action="/digest/send-now" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline btn-sm">Send Now</button>
+            </form>
+            <button type="submit" class="btn btn-primary">Save Preferences</button>
+        </div>
+    </form>
+
+    {% if pref and pref.last_sent_at %}
+    <p class="text-sm text-base-content/50 mt-4">
+        Last digest sent: {{ pref.last_sent_at.strftime('%b %d, %Y at %I:%M %p') }}
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

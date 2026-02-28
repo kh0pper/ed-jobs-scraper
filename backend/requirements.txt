@@ -34,3 +34,17 @@ pydantic>=2.5.3
 # Frontend templates
 jinja2>=3.1.2
 aiofiles>=23.2.1
+
+# Encryption
+cryptography>=42.0.0
+
+# Google APIs
+google-api-python-client>=2.100.0
+google-auth>=2.25.0
+google-auth-oauthlib>=1.2.0
+
+# PDF generation (local fallback)
+weasyprint>=60.0
+
+# PDF text extraction (for Applitrack attachments)
+pypdf>=4.0.0

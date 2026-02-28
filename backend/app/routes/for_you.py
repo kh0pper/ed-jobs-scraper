@@ -10,6 +10,7 @@ from app.models.base import get_db
 from app.models.user import User
 from app.models.user_interaction import UserInteraction
 from app.models.saved_job import SavedJob
+from app.models.application import Application
 from app.dependencies.auth import require_user, ensure_csrf_token
 from app.services.job_scoring_service import get_recommendations, COLD_START_THRESHOLD
 
@@ -64,6 +65,13 @@ async def for_you_page(
             if row:
                 user_thumbs[job_id] = row
 
+    # Get application statuses for displayed jobs
+    app_result = await db.execute(
+        select(Application.job_posting_id, Application.status)
+        .where(Application.user_id == user.id, Application.status != "failed")
+    )
+    application_statuses = {row[0]: row[1] for row in app_result}
+
     csrf_token = ensure_csrf_token(request)
 
     return templates.TemplateResponse(
@@ -78,6 +86,7 @@ async def for_you_page(
             "cold_start_threshold": COLD_START_THRESHOLD,
             "saved_job_ids": saved_job_ids,
             "user_thumbs": user_thumbs,
+            "application_statuses": application_statuses,
             "csrf_token": csrf_token,
             "page": 1,
             "has_more": total > 20,
@@ -123,6 +132,13 @@ async def for_you_partial(
             if row:
                 user_thumbs[job_id] = row
 
+    # Get application statuses
+    app_result = await db.execute(
+        select(Application.job_posting_id, Application.status)
+        .where(Application.user_id == user.id, Application.status != "failed")
+    )
+    application_statuses = {row[0]: row[1] for row in app_result}
+
     has_more = (offset + limit) < total
     csrf_token = ensure_csrf_token(request)
 
@@ -134,6 +150,7 @@ async def for_you_partial(
             "jobs": jobs,
             "saved_job_ids": saved_job_ids,
             "user_thumbs": user_thumbs,
+            "application_statuses": application_statuses,
             "csrf_token": csrf_token,
             "has_more": has_more,
             "page": page,
