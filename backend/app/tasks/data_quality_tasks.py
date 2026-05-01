@@ -129,12 +129,27 @@ def geocode_pending_jobs(batch_size: int = 200):
                 source = None
                 org = org_map.get(job.organization_id)
 
-                # 1. If job has a location string, try geocoding it directly
+                # 1. If job has a location string, geocode it.
+                #    Free-text Nominatim collides "Houston, Texas" / "Austin, Texas" / etc.
+                #    with same-named counties (Austin County is ~70 km from City of Austin;
+                #    Houston County is ~180 km from City of Houston). When the location
+                #    looks like just "City" or "City, State", use structured city search,
+                #    which queries city/state/country as separate params and avoids the
+                #    county collision. Reserve free-text for actual street addresses.
                 if job.location:
-                    result = geocoder.geocode_sync(
-                        query=job.location,
-                        state="Texas",
+                    loc_parts = [p.strip() for p in job.location.split(",") if p.strip()]
+                    looks_like_city_only = (
+                        1 <= len(loc_parts) <= 2
+                        and not loc_parts[0][0].isdigit()
+                        and len(loc_parts[0]) <= 50
                     )
+                    if looks_like_city_only:
+                        result = geocoder.geocode_city_sync(city=loc_parts[0])
+                    else:
+                        result = geocoder.geocode_sync(
+                            query=job.location,
+                            state="Texas",
+                        )
                     if result:
                         source = "address"
 
@@ -174,8 +189,12 @@ def geocode_pending_jobs(batch_size: int = 200):
                 if result:
                     job.latitude = result.latitude
                     job.longitude = result.longitude
-                    if not job.city and result.city:
-                        job.city = result.city
+                    if result.city:
+                        # Address geocode is authoritative — overwrite stale city
+                        # (e.g. left over from a previous 'org' fallback). Campus
+                        # and city geocodes are less specific, so only fill if empty.
+                        if source == "address" or not job.city:
+                            job.city = result.city
                     job.geocode_status = "success"
                     job.geocode_source = source
                     success += 1
