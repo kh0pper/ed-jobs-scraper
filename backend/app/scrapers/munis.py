@@ -18,18 +18,35 @@ logger = logging.getLogger(__name__)
 class MunisScraper(BaseScraper):
 
     def scrape(self) -> list[dict]:
+        import time
+
         url = self.source.base_url
         logger.info(f"Fetching Munis page: {url}")
 
-        resp = httpx.get(
-            url,
-            timeout=30,
-            follow_redirects=True,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36",
-            },
-        )
-        resp.raise_for_status()
+        # Munis 7-day failure breakdown (verified 2026-04-30): 7x read-timeout,
+        # 3x DNS resolution failure (the latter coincided with crow's WiFi-only
+        # freeze on 2026-04-27). All transient, no structural cause.
+        # Retry with exponential backoff: 5s, 15s, 45s.
+        resp = None
+        for attempt in range(3):
+            try:
+                resp = httpx.get(
+                    url,
+                    timeout=30,
+                    follow_redirects=True,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36",
+                    },
+                )
+                resp.raise_for_status()
+                break
+            except (httpx.TimeoutException, httpx.HTTPError, httpx.NetworkError) as e:
+                if attempt == 2:
+                    raise
+                wait = 5 * (3 ** attempt)
+                logger.warning(f"Munis fetch attempt {attempt + 1}/3 failed ({type(e).__name__}: {e}); retrying in {wait}s")
+                time.sleep(wait)
+        assert resp is not None
 
         soup = BeautifulSoup(resp.text, "lxml")
         jobs = []

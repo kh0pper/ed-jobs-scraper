@@ -35,28 +35,57 @@ class JobviteScraper(BaseScraper):
 
         async with get_browser() as browser:
             page = await browser.new_page()
-            await page.goto(url, wait_until="networkidle")
-            await human_delay(2000, 3000)
+            # wait_until="networkidle" never settles on jobvite — background
+            # trackers keep firing past the 30s default timeout. Use
+            # domcontentloaded + explicit wait_for_selector for the job listing.
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            except Exception as e:
+                logger.warning(f"goto raised {type(e).__name__}: {e} — continuing with whatever rendered")
+            try:
+                await page.wait_for_selector(
+                    ".jv-job-list-name, .jv-featured-job", timeout=15000
+                )
+            except Exception:
+                pass  # selector wait timed out — proceed anyway, listings may be found
+            await human_delay(1500, 2500)
 
             jobs = []
-            listings = await page.query_selector_all(".jv-job-list__item, .jv-job-item, tr[data-job-id]")
+            # Jobvite's current DOM (verified 2026-04-30):
+            #   - Standard list: <tr> containing <td class="jv-job-list-name"><a>...</a></td>
+            #     and a sibling <td class="jv-job-list-location">
+            #   - Featured jobs:  <div class="jv-featured-job"> with .jv-featured-job-title a
+            #     and .jv-featured-job-location
+            # Old selectors (.jv-job-list__item, .jv-job-item, tr[data-job-id]) no longer match.
+            listings = await page.query_selector_all(
+                "tr:has(td.jv-job-list-name), .jv-featured-job"
+            )
 
             if not listings:
                 listings = await page.query_selector_all("[class*='job'], .posting")
 
             for listing in listings:
                 try:
-                    title_el = await listing.query_selector("a, .jv-job-list__title, h3")
+                    title_el = await listing.query_selector(
+                        ".jv-job-list-name a, .jv-featured-job-title a, "
+                        ".jv-job-list__title, h3, a"
+                    )
                     if not title_el:
                         continue
 
                     title = await title_el.inner_text()
                     href = await title_el.get_attribute("href")
 
-                    location_el = await listing.query_selector(".jv-job-list__location, .location")
+                    location_el = await listing.query_selector(
+                        ".jv-job-list-location, .jv-featured-job-location, "
+                        ".jv-job-list__location, .location"
+                    )
                     location = await location_el.inner_text() if location_el else None
 
-                    category_el = await listing.query_selector(".jv-job-list__category, .department, .category")
+                    category_el = await listing.query_selector(
+                        ".jv-job-list-category, .jv-featured-job-category, "
+                        ".jv-job-list__category, .department, .category"
+                    )
                     category = await category_el.inner_text() if category_el else None
 
                     if title and title.strip():
