@@ -10,43 +10,12 @@ from app.models.organization import Organization  # noqa: F401
 from app.models.scrape_source import ScrapeSource  # noqa: F401
 from app.models.job_posting import JobPosting
 from app.models.scrape_run import ScrapeRun  # noqa: F401
+from app.scrapers._states import parse_state
 from app.services.category_normalizer import normalize_category
 from app.services.geocoder import Geocoder, is_geocodable_campus
 from app.services.city_resolver import resolve_city_for_job, derive_org_city
 
 logger = logging.getLogger(__name__)
-
-# State abbreviations for parsing
-US_STATES = {
-    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR", "CALIFORNIA": "CA",
-    "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE", "FLORIDA": "FL", "GEORGIA": "GA",
-    "HAWAII": "HI", "IDAHO": "ID", "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA",
-    "KANSAS": "KS", "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
-    "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS", "MISSOURI": "MO",
-    "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ",
-    "NEW MEXICO": "NM", "NEW YORK": "NY", "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH",
-    "OKLAHOMA": "OK", "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
-    "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT", "VERMONT": "VT",
-    "VIRGINIA": "VA", "WASHINGTON": "WA", "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
-    "DISTRICT OF COLUMBIA": "DC",
-}
-STATE_ABBREVS = set(US_STATES.values())
-
-
-def parse_state_from_location(location: str | None) -> str | None:
-    """Parse state from location string like 'Houston, TX' or 'Texas'."""
-    if not location:
-        return None
-    text = location.strip().upper()
-    # Check for 2-letter state at end: "Houston, TX" or "Houston TX"
-    match = re.search(r"\b([A-Z]{2})\s*$", text)
-    if match and match.group(1) in STATE_ABBREVS:
-        return match.group(1)
-    # Check for full state name
-    for name, abbrev in US_STATES.items():
-        if name in text:
-            return abbrev
-    return None
 
 
 @celery_app.task(name="app.tasks.data_quality_tasks.normalize_job_categories")
@@ -387,7 +356,7 @@ def backfill_job_states(deactivate_non_texas: bool = True):
                 break
 
             for job in jobs:
-                state = parse_state_from_location(job.location)
+                state = parse_state(job.location)
 
                 # If we can't parse state, default to TX for Texas-based orgs
                 if state is None:

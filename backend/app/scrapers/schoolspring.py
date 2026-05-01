@@ -12,6 +12,7 @@ import logging
 import re
 from datetime import datetime
 
+from app.scrapers._states import parse_state
 from app.scrapers.base import BaseScraper
 from app.scrapers.registry import register_scraper
 
@@ -155,13 +156,10 @@ class SchoolSpringScraper(BaseScraper):
             if parts:
                 city = parts[0].strip()
 
-        # Parse state from location (e.g., "Spring, TX" -> "TX")
-        state = "TX"  # Default to TX for Texas-based org
-        if raw.get("location"):
-            loc = raw["location"].upper()
-            match = re.search(r"\b([A-Z]{2})\s*$", loc)
-            if match:
-                state = match.group(1)
+        # Default to TX for Texas-based orgs; only override when parse_state
+        # returns a real state (validated against STATE_ABBREVS, so "Spring, St"
+        # → None → keeps "TX" instead of being mis-coded as "ST").
+        state = parse_state(raw.get("location")) or "TX"
 
         return {
             "title": raw["title"],

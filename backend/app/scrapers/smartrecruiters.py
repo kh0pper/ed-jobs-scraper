@@ -71,20 +71,24 @@ class SmartRecruitersScraper(BaseScraper):
         return tx_jobs
 
     def _is_texas_job(self, job: dict) -> bool:
-        """Check if job is located in Texas."""
+        """Check if job is located in Texas. Strict: empty region is rejected."""
         location = job.get("location", {})
         if not isinstance(location, dict):
             return False
         region = location.get("region", "").upper()
-        # Accept TX, Texas, or empty region for jobs at orgs we know are Texas-only
-        return region in ("TX", "TEXAS", "")
+        return region in ("TX", "TEXAS")
 
     def normalize(self, raw: dict) -> dict:
         location = raw.get("location", {})
         city = location.get("city") if isinstance(location, dict) else None
         region = location.get("region", "") if isinstance(location, dict) else ""
-        # Normalize state code
-        state = "TX" if region.upper() in ("TX", "TEXAS", "") else region[:2].upper() if region else None
+        # Strict state coding: empty region returns None (let downstream defaults handle).
+        if region.upper() in ("TX", "TEXAS"):
+            state = "TX"
+        elif region:
+            state = region[:2].upper()
+        else:
+            state = None
         loc_str = f"{city}, {region}" if city else None
 
         return {
