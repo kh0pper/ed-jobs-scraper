@@ -32,6 +32,7 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    worker_max_memory_per_child=500000,  # 500MB — auto-recycle workers
     task_routes={
         "app.tasks.apply_tasks.fill_application": {"queue": "apply"},
         "app.tasks.apply_tasks.submit_application": {"queue": "apply"},
@@ -90,5 +91,9 @@ celery_app.conf.beat_schedule = {
     "cleanup-old-screenshots": {
         "task": "app.tasks.apply_tasks.cleanup_old_screenshots",
         "schedule": crontab(hour=3, minute=0, day_of_week=0),  # Sunday 3 AM
+    },
+    "close-orphaned-scrape-runs": {
+        "task": "app.tasks.maintenance_tasks.close_orphaned_scrape_runs",
+        "schedule": crontab(hour=4, minute=15),  # Daily 4:15 AM CT — sweeps stuck-running rows from worker crashes
     },
 }

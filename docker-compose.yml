@@ -3,7 +3,7 @@ services:
     build: ./backend
     container_name: edjobs_backend
     ports:
-      - "8002:8000"
+      - "100.118.41.122:8002:8000"
     env_file: .env
     dns:
       - 8.8.8.8
@@ -29,6 +29,7 @@ services:
   celery_worker:
     build: ./backend
     container_name: edjobs_celery_worker
+    init: true
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
     env_file: .env
     dns:
@@ -54,6 +55,7 @@ services:
   celery_apply_worker:
     build: ./backend
     container_name: edjobs_celery_apply_worker
+    init: true
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1 -Q apply
     env_file: .env
     dns:

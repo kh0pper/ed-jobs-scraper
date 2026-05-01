@@ -1,5 +1,9 @@
 # FastAPI and server
 fastapi>=0.109.0
+# Starlette 1.0.0 broke the legacy TemplateResponse(name, context) signature used
+# throughout this codebase — pin to <1.0 until the call sites are migrated to
+# TemplateResponse(request, name, context).
+starlette<1.0
 uvicorn[standard]>=0.27.0
 
 # Database
