@@ -71,11 +71,15 @@ class EightfoldScraper(BaseScraper):
         return all_jobs
 
     def normalize(self, raw: dict) -> dict:
-        # Parse state from location (e.g., "Houston, TX" -> "TX")
+        # Parse state from location. Eightfold consistently embeds an
+        # "(US-XX)" tag (e.g. "228 McCarty St, Houston, Texas (US-TX),
+        # 77029, United States"), which is unambiguous. Naive
+        # \b[A-Z]{2}\b matching picked up street suffixes like "St"/"Ln"
+        # and school suffixes like "ES"/"MS" before the real state.
         state = "TX"  # Default for Texas-based orgs
         location = raw.get("location", "")
         if location:
-            match = re.search(r"\b([A-Z]{2})\b", location.upper())
+            match = re.search(r"\(US-([A-Z]{2})\)", location)
             if match:
                 state = match.group(1)
 
