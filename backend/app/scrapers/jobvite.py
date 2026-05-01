@@ -20,6 +20,28 @@ STATE_ABBREVS = {
     "VA", "WA", "WV", "WI", "WY", "DC",
 }
 
+# Full state names → abbreviation. Used when locations like "Tampa, Florida"
+# don't end in a 2-letter abbreviation. Multi-word names (e.g. "WEST VIRGINIA")
+# must be matched before single-word substrings of them ("VIRGINIA"), which
+# _parse_state handles by sorting by length descending.
+STATE_NAMES = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+    "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+    "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+    "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+    "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+    "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS",
+    "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV",
+    "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ", "NEW MEXICO": "NM", "NEW YORK": "NY",
+    "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK",
+    "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI",
+    "SOUTH CAROLINA": "SC", "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX",
+    "UTAH": "UT", "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA",
+    "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
+    "DISTRICT OF COLUMBIA": "DC",
+}
+_STATE_NAMES_BY_LENGTH = sorted(STATE_NAMES, key=len, reverse=True)
+
 
 @register_scraper("jobvite")
 class JobviteScraper(BaseScraper):
@@ -105,7 +127,7 @@ class JobviteScraper(BaseScraper):
             return tx_jobs
 
     def _parse_state(self, location: str | None) -> str | None:
-        """Parse state from location string like 'Houston, TX' or 'Texas'."""
+        """Parse state from location string like 'Houston, TX' or 'Tampa, Florida'."""
         if not location:
             return None
         text = location.strip().upper()
@@ -113,17 +135,16 @@ class JobviteScraper(BaseScraper):
         match = re.search(r"\b([A-Z]{2})\s*$", text)
         if match and match.group(1) in STATE_ABBREVS:
             return match.group(1)
-        # Check for "Texas"
-        if "TEXAS" in text:
-            return "TX"
+        # Check for full state names. Longest-first so "WEST VIRGINIA" beats "VIRGINIA".
+        for name in _STATE_NAMES_BY_LENGTH:
+            if re.search(rf"\b{re.escape(name)}\b", text):
+                return STATE_NAMES[name]
         return None
 
     def _is_texas_job(self, job: dict) -> bool:
-        """Check if job is located in Texas."""
+        """Check if job is located in Texas. Strict: unparseable locations are rejected."""
         location = job.get("location")
-        state = self._parse_state(location)
-        # Accept TX or unknown (for orgs we know are Texas-only)
-        return state in ("TX", None)
+        return self._parse_state(location) == "TX"
 
     def normalize(self, raw: dict) -> dict:
         location = raw.get("location")
