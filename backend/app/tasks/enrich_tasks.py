@@ -15,7 +15,11 @@ from app.models.organization import Organization  # noqa: F401
 from app.models.scrape_source import ScrapeSource  # noqa: F401
 from app.models.job_posting import JobPosting
 from app.models.scrape_run import ScrapeRun  # noqa: F401
-from app.services.job_extractor import extract_job_details, parse_salary_range
+from app.services.job_extractor import (
+    extract_job_details,
+    extract_salary_snippet,
+    parse_salary_range,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +83,15 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
             requirements = result.get("requirements")
             salary_text = result.get("salary_info")
 
+            # Fallback: K-12 detail pages often bury salary inside the
+            # description body under a `Salary:` / `Compensation:` label
+            # rather than in a structured field or a short inline span,
+            # so the extractor's salary_info comes back empty even when
+            # the description plainly contains the number. Re-scan the
+            # description for a label-anchored snippet before giving up.
+            if not salary_text and description:
+                salary_text = extract_salary_snippet(description)
+
             if not description and not salary_text:
                 row.enrichment_status = "no_data"
                 row.enrichment_attempted_at = now
@@ -117,5 +130,53 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
         logger.info("enrich_pending_jobs done: %s", counts)
         return counts
 
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.enrich_tasks.backfill_salary_from_descriptions")
+def backfill_salary_from_descriptions(limit: int = 200, platform: str | None = None):
+    """Re-parse salary_min/max from existing descriptions without re-fetching.
+
+    Use after improving the salary detection logic, to retro-populate rows
+    that were already enriched (description IS NOT NULL) but never got a
+    salary value. No HTTP traffic, no updates to enrichment_attempted_at.
+    """
+    counts = {"selected": 0, "updated": 0, "no_match": 0}
+    db = SyncSessionLocal()
+    try:
+        q = (
+            db.query(JobPosting)
+            .filter(
+                JobPosting.description.isnot(None),
+                JobPosting.salary_min.is_(None),
+                JobPosting.enrichment_status == "success",
+            )
+        )
+        if platform:
+            q = q.filter(JobPosting.platform == platform)
+        rows = q.limit(limit).all()
+        counts["selected"] = len(rows)
+
+        for row in rows:
+            snippet = extract_salary_snippet(row.description)
+            if not snippet:
+                counts["no_match"] += 1
+                continue
+            smin, smax = parse_salary_range(snippet)
+            if smin is None and smax is None:
+                counts["no_match"] += 1
+                continue
+            if not row.salary_text:
+                row.salary_text = snippet[:255]
+            if smin is not None and row.salary_min is None:
+                row.salary_min = smin
+            if smax is not None and row.salary_max is None:
+                row.salary_max = smax
+            counts["updated"] += 1
+            db.commit()
+
+        logger.info("backfill_salary_from_descriptions done: %s", counts)
+        return counts
     finally:
         db.close()

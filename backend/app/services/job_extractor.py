@@ -395,6 +395,33 @@ _SALARY_RANGE_PATTERN = re.compile(
     r"\$?\s*([\d,]+(?:\.\d+)?)\s*([kK])?"
 )
 _SALARY_SINGLE_PATTERN = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)\s*([kK])?")
+_SALARY_LABEL_PATTERN = re.compile(
+    r"\b(?:Salary|Compensation|Pay\s+Rate|Hourly\s+Rate|Annual\s+Salary|Pay)\b\s*:",
+    re.IGNORECASE,
+)
+
+
+def extract_salary_snippet(text: str | None) -> str | None:
+    """Find a label-anchored salary mention inside a longer description body.
+
+    Many K-12 detail pages bury the salary inside a multi-thousand-character
+    description with a header like `Salary:` or `Compensation:` followed by a
+    pay-grade line and a dollar figure. The structured-field and short-inline
+    paths in `_extract_applitrack` miss these. This helper scans `text` for
+    one of those labels and returns the window after it (up to the next blank
+    line, capped at 255 chars) provided the window contains `$<digits>`.
+    Returns None when no usable snippet is found.
+    """
+    if not text:
+        return None
+    for m in _SALARY_LABEL_PATTERN.finditer(text):
+        window = text[m.end(): m.end() + 250].lstrip()
+        para_end = window.find("\n\n")
+        if para_end != -1:
+            window = window[:para_end]
+        if re.search(r"\$\s*\d{2,}", window):
+            return window.strip()[:255]
+    return None
 
 
 def _to_amount(num_str: str, k_suffix: str | None) -> float | None:
