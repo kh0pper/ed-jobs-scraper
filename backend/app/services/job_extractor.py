@@ -395,40 +395,87 @@ def _extract_workday(job) -> dict:
 # --- Salary parsing ---
 
 _HOURS_PER_YEAR = 2080  # 40 hr/wk × 52 wk
-_HOURLY_PATTERN = re.compile(r"\b(?:per\s+hour|an\s+hour|hourly|/\s*(?:hr|hour))\b", re.IGNORECASE)
+_HOURLY_PATTERN = re.compile(
+    r"(?:\bper\s+hour\b|\ban\s+hour\b|\bhourly\b|\bhour\s+rate\b|(?<=[\d\s])/\s*(?:hr|hour)\b)",
+    re.IGNORECASE,
+)
+_STIPEND_LEFT_CONTEXT = re.compile(
+    r"\b(?:stipend|bonus|signing|incentive|critical\s+need|supplemental|supplement)\b",
+    re.IGNORECASE,
+)
 _SALARY_RANGE_PATTERN = re.compile(
     r"\$\s*([\d,]+(?:\.\d+)?)\s*([kK])?"
     r"\s*(?:-|–|—|to)\s*"
     r"\$?\s*([\d,]+(?:\.\d+)?)\s*([kK])?"
 )
 _SALARY_SINGLE_PATTERN = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)\s*([kK])?")
-_SALARY_LABEL_PATTERN = re.compile(
-    r"\b(?:Salary|Compensation|Pay\s+Rate|Hourly\s+Rate|Annual\s+Salary|Pay)\b\s*:",
+# Label patterns are tried in three priority tiers: explicit-annual,
+# pay-grade (looser annual), then hourly. Within each tier all document-
+# order matches are tried and the first one that produces a parseable
+# salary wins. This avoids the trap where "Hourly Rate: $16.40" parses
+# to (34112, None) via the ×2080 multiplier when the same posting has an
+# explicit "Annual Salary: $25,190" the district will actually pay.
+_EXPLICIT_ANNUAL_PATTERN = re.compile(
+    r"\b(?:Min(?:imum)?\s+Annual\s+Salary|Max(?:imum)?\s+Annual\s+Salary|"
+    r"Annual\s+Salary|Starting\s+Salary|Salary|Compensation|Pay\s+Range)\b\s*:",
+    re.IGNORECASE,
+)
+_PAY_GRADE_PATTERN = re.compile(r"\bPay\s+Grade\b\s*:", re.IGNORECASE)
+_HOURLY_LABEL_PATTERN = re.compile(
+    r"\b(?:Min(?:imum)?\s+Hourly\s+Rate|Max(?:imum)?\s+Hourly\s+Rate|"
+    r"Hourly\s+Rate|Pay\s+Rate|Pay)\b\s*:",
     re.IGNORECASE,
 )
 
 
-def extract_salary_snippet(text: str | None) -> str | None:
-    """Find a label-anchored salary mention inside a longer description body.
+def extract_salary(
+    text: str | None,
+) -> tuple[float | None, float | None, str | None]:
+    """Find a label-anchored salary mention and parse it.
 
-    Many K-12 detail pages bury the salary inside a multi-thousand-character
-    description with a header like `Salary:` or `Compensation:` followed by a
-    pay-grade line and a dollar figure. The structured-field and short-inline
-    paths in `_extract_applitrack` miss these. This helper scans `text` for
-    one of those labels and returns the window after it (up to the next blank
-    line, capped at 255 chars) provided the window contains `$<digits>`.
-    Returns None when no usable snippet is found.
+    Three priority tiers — explicit-annual, pay-grade (looser annual),
+    then hourly. Each tier carries an explicit hourly hint into the
+    parser, so an Annual Salary match doesn't get its value multiplied
+    by 2080 just because a later 'Minimum Hourly Rate' label sits in
+    the same window. Within each tier, all matches are tried in
+    document order and the first parseable one wins.
+
+    Returns (salary_min, salary_max, snippet) — values may be None.
     """
     if not text:
-        return None
-    for m in _SALARY_LABEL_PATTERN.finditer(text):
-        window = text[m.end(): m.end() + 250].lstrip()
-        para_end = window.find("\n\n")
-        if para_end != -1:
-            window = window[:para_end]
-        if re.search(r"\$\s*\d{2,}", window):
-            return window.strip()[:255]
-    return None
+        return (None, None, None)
+    tiers = (
+        # Annual-leaning labels: force is_hourly=False so a "Minimum
+        # Hourly Rate" sitting later in the same window doesn't trigger
+        # ×2080 on the Annual Salary value.
+        (_EXPLICIT_ANNUAL_PATTERN, False),
+        # Pay Grade can be either; let the hourly autodetect decide.
+        (_PAY_GRADE_PATTERN, None),
+        # Hourly tier: autodetect too. "Hourly Rate: $X" autodetects True
+        # via \bhourly\b in the snippet. "Pay: $205 per full day"
+        # autodetects False and gets rejected by the $15k single-value
+        # floor — substitute-teacher day rates won't masquerade as
+        # six-figure salaries.
+        (_HOURLY_LABEL_PATTERN, None),
+    )
+    for pattern, hourly_hint in tiers:
+        for m in pattern.finditer(text):
+            window = text[m.start(): m.start() + 300]
+            label_len = m.end() - m.start()
+            after = window.find("\n\n", label_len)
+            if after != -1:
+                window = window[:after]
+            if not re.search(r"\$\s*\d{2,}", window):
+                continue
+            smin, smax = parse_salary_range(window, hourly_hint=hourly_hint)
+            if smin is not None or smax is not None:
+                return (smin, smax, window.strip()[:255])
+    return (None, None, None)
+
+
+def extract_salary_snippet(text: str | None) -> str | None:
+    """Backwards-compatible wrapper — returns just the snippet."""
+    return extract_salary(text)[2]
 
 
 def _to_amount(num_str: str, k_suffix: str | None) -> float | None:
@@ -441,19 +488,45 @@ def _to_amount(num_str: str, k_suffix: str | None) -> float | None:
     return v
 
 
-def parse_salary_range(text: str | None) -> tuple[float | None, float | None]:
+def parse_salary_range(
+    text: str | None,
+    hourly_hint: bool | None = None,
+) -> tuple[float | None, float | None]:
     """Parse a free-form salary string into (min, max) annual USD.
 
-    Returns (None, None) if no `$` is present or the text doesn't parse cleanly.
-    Hourly rates are multiplied by 2080 hr/yr. The `k` suffix multiplies by 1000.
-    A bare `$<amount>` below 1000 (e.g. `$72`) is treated as unparseable annual.
+    Anchors on the FIRST `$<digits>` in the text so "$30,000 annually (plus
+    a $3,000-$6,000 stipend)" returns (30000, None) instead of (3000, 6000).
+    Hourly rates are multiplied by 2080 hr/yr. The `k` suffix multiplies by
+    1000. Single non-k values below $15,000 are treated as unparseable
+    annual (filters out stipends and pay-grade-code amounts).
+
+    `hourly_hint`: pass True to force ×2080 conversion, False to skip
+    autodetect and treat the value as annual, None (default) to scan the
+    text for hourly keywords. Used by extract_salary() to keep an Annual
+    Salary match from getting hourly-multiplied just because a later
+    Hourly Rate label sits in the same window.
+
+    If the 40 chars immediately before the anchor contain stipend/bonus/
+    signing/incentive/supplement keywords, the whole match is rejected.
     """
     if not text or "$" not in text:
         return (None, None)
 
-    is_hourly = bool(_HOURLY_PATTERN.search(text))
+    if hourly_hint is None:
+        is_hourly = bool(_HOURLY_PATTERN.search(text))
+    else:
+        is_hourly = hourly_hint
 
-    range_match = _SALARY_RANGE_PATTERN.search(text)
+    first_dollar = _SALARY_SINGLE_PATTERN.search(text)
+    if not first_dollar:
+        return (None, None)
+    anchor = first_dollar.start()
+
+    left = text[max(0, anchor - 40): anchor].lower()
+    if _STIPEND_LEFT_CONTEXT.search(left):
+        return (None, None)
+
+    range_match = _SALARY_RANGE_PATTERN.match(text, anchor)
     if range_match:
         a = _to_amount(range_match.group(1), range_match.group(2))
         b = _to_amount(range_match.group(3), range_match.group(4))
@@ -466,13 +539,13 @@ def parse_salary_range(text: str | None) -> tuple[float | None, float | None]:
                 return (None, None)
             return (lo, hi)
 
-    single_match = _SALARY_SINGLE_PATTERN.search(text)
+    single_match = first_dollar
     if single_match:
         a = _to_amount(single_match.group(1), single_match.group(2))
         if a is not None:
             if is_hourly:
                 a *= _HOURS_PER_YEAR
-            elif not single_match.group(2) and a < 1000:
+            elif not single_match.group(2) and a < 15000:
                 return (None, None)
             return (a, None)
 

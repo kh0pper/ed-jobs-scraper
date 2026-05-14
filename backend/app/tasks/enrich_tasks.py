@@ -17,7 +17,7 @@ from app.models.job_posting import JobPosting
 from app.models.scrape_run import ScrapeRun  # noqa: F401
 from app.services.job_extractor import (
     extract_job_details,
-    extract_salary_snippet,
+    extract_salary,
     parse_salary_range,
 )
 
@@ -82,17 +82,25 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
             description = result.get("description")
             requirements = result.get("requirements")
             salary_text = result.get("salary_info")
+            # Structured salary_info from the platform extractor; if the
+            # platform returned a value, parse it with autodetect.
+            smin_struct, smax_struct = parse_salary_range(salary_text) if salary_text else (None, None)
 
-            # Fallback: K-12 detail pages often bury salary inside the
-            # description body under a `Salary:` / `Compensation:` label
-            # rather than in a structured field or a short inline span,
-            # so the extractor's salary_info comes back empty even when
-            # the description plainly contains the number. Re-scan the
-            # description for a label-anchored snippet before giving up.
-            if not salary_text and description:
-                salary_text = extract_salary_snippet(description)
+            # Fallback: when the structured field didn't give us a number,
+            # scan the description body for a label-anchored snippet. The
+            # extract_salary helper applies the right hourly hint per
+            # label tier so Annual Salary windows don't get ×2080'd when
+            # a later Hourly Rate label sits in the same paragraph.
+            snippet_smin = snippet_smax = None
+            snippet_text = None
+            if (smin_struct is None and smax_struct is None) and description:
+                snippet_smin, snippet_smax, snippet_text = extract_salary(description)
 
-            if not description and not salary_text:
+            final_smin = smin_struct if smin_struct is not None else snippet_smin
+            final_smax = smax_struct if smax_struct is not None else snippet_smax
+            final_text = salary_text or snippet_text
+
+            if not description and not final_text:
                 row.enrichment_status = "no_data"
                 row.enrichment_attempted_at = now
                 counts["no_data"] += 1
@@ -104,14 +112,12 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
                     row.description = description
                 if requirements and not row.requirements:
                     row.requirements = requirements
-                if salary_text:
-                    if not row.salary_text:
-                        row.salary_text = salary_text[:255]
-                    smin, smax = parse_salary_range(salary_text)
-                    if smin is not None and row.salary_min is None:
-                        row.salary_min = smin
-                    if smax is not None and row.salary_max is None:
-                        row.salary_max = smax
+                if final_text and not row.salary_text:
+                    row.salary_text = final_text[:255]
+                if final_smin is not None and row.salary_min is None:
+                    row.salary_min = final_smin
+                if final_smax is not None and row.salary_max is None:
+                    row.salary_max = final_smax
                 row.enrichment_status = "success"
                 row.enrichment_attempted_at = now
                 counts["success"] += 1
@@ -158,12 +164,8 @@ def backfill_salary_from_descriptions(limit: int = 200, platform: str | None = N
         counts["selected"] = len(rows)
 
         for row in rows:
-            snippet = extract_salary_snippet(row.description)
-            if not snippet:
-                counts["no_match"] += 1
-                continue
-            smin, smax = parse_salary_range(snippet)
-            if smin is None and smax is None:
+            smin, smax, snippet = extract_salary(row.description)
+            if snippet is None or (smin is None and smax is None):
                 counts["no_match"] += 1
                 continue
             if not row.salary_text:
