@@ -237,31 +237,38 @@ def _extract_eightfold(job) -> dict:
 
 
 def _extract_smartrecruiters(job) -> dict:
-    """SmartRecruiters: fetch detail from API endpoint."""
-    # Extract posting ID from URL
+    """SmartRecruiters: parse the public API JSON.
+
+    All scraper-stored URLs hit api.smartrecruiters.com, which returns a
+    structured posting with `jobAd.sections.{companyDescription,
+    jobDescription, qualifications, additionalInformation}`. Each section
+    is `{title, text}` with text in HTML; strip tags before storing.
+    """
     url = job.application_url
     client = _get_http_client()
-
-    # SmartRecruiters detail pages are HTML with structured content
     resp = client.get(url)
     resp.raise_for_status()
 
-    soup = BeautifulSoup(resp.text, "lxml")
+    try:
+        data = resp.json()
+    except ValueError:
+        logger.warning("smartrecruiters: non-JSON response for %s", url)
+        return {"description": None, "requirements": None, "qualifications": None, "salary_info": None}
 
-    description = None
-    requirements = None
+    sections = data.get("jobAd", {}).get("sections") or {}
 
-    # SmartRecruiters uses semantic HTML sections
-    for section in soup.select(".job-section, .jobdetails, [class*='description']"):
-        heading = section.find(["h2", "h3", "h4"])
-        text = section.get_text(separator="\n", strip=True)
-        if heading:
-            heading_text = heading.get_text(strip=True).lower()
-            if "requirement" in heading_text or "qualification" in heading_text:
-                requirements = text
-                continue
-        if len(text) > 50:
-            description = (description or "") + "\n\n" + text
+    def _strip(html: str | None) -> str:
+        if not html:
+            return ""
+        return BeautifulSoup(html, "lxml").get_text(separator="\n", strip=True)
+
+    description_parts = []
+    for key in ("companyDescription", "jobDescription", "additionalInformation"):
+        text = _strip(sections.get(key, {}).get("text"))
+        if text:
+            description_parts.append(text)
+    description = "\n\n".join(description_parts) if description_parts else None
+    requirements = _strip(sections.get("qualifications", {}).get("text")) or None
 
     return {
         "description": description,

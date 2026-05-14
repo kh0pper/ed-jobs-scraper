@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 ENRICHMENT_RETRY_DAYS = 7
 DEFAULT_BATCH_LIMIT = 50
-SUPPORTED_PLATFORMS = ("applitrack",)  # Phase 1 — extend in Phase 2
+SUPPORTED_PLATFORMS = ("applitrack", "smartrecruiters")
 
 
 @celery_app.task(name="app.tasks.enrich_tasks.enrich_pending_jobs")

@@ -102,4 +102,9 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/15"),
         "kwargs": {"limit": 50, "platform": "applitrack"},
     },
+    "enrich-smartrecruiters-pending": {
+        "task": "app.tasks.enrich_tasks.enrich_pending_jobs",
+        "schedule": crontab(minute="7-59/15"),  # offset from applitrack to avoid worker contention
+        "kwargs": {"limit": 30, "platform": "smartrecruiters"},
+    },
 }
