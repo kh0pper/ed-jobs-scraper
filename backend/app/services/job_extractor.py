@@ -385,6 +385,66 @@ def _extract_workday(job) -> dict:
     }
 
 
+# --- Salary parsing ---
+
+_HOURS_PER_YEAR = 2080  # 40 hr/wk × 52 wk
+_HOURLY_PATTERN = re.compile(r"\b(?:per\s+hour|an\s+hour|hourly|/\s*(?:hr|hour))\b", re.IGNORECASE)
+_SALARY_RANGE_PATTERN = re.compile(
+    r"\$\s*([\d,]+(?:\.\d+)?)\s*([kK])?"
+    r"\s*(?:-|–|—|to)\s*"
+    r"\$?\s*([\d,]+(?:\.\d+)?)\s*([kK])?"
+)
+_SALARY_SINGLE_PATTERN = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)\s*([kK])?")
+
+
+def _to_amount(num_str: str, k_suffix: str | None) -> float | None:
+    try:
+        v = float(num_str.replace(",", ""))
+    except ValueError:
+        return None
+    if k_suffix:
+        v *= 1000
+    return v
+
+
+def parse_salary_range(text: str | None) -> tuple[float | None, float | None]:
+    """Parse a free-form salary string into (min, max) annual USD.
+
+    Returns (None, None) if no `$` is present or the text doesn't parse cleanly.
+    Hourly rates are multiplied by 2080 hr/yr. The `k` suffix multiplies by 1000.
+    A bare `$<amount>` below 1000 (e.g. `$72`) is treated as unparseable annual.
+    """
+    if not text or "$" not in text:
+        return (None, None)
+
+    is_hourly = bool(_HOURLY_PATTERN.search(text))
+
+    range_match = _SALARY_RANGE_PATTERN.search(text)
+    if range_match:
+        a = _to_amount(range_match.group(1), range_match.group(2))
+        b = _to_amount(range_match.group(3), range_match.group(4))
+        if a is not None and b is not None:
+            if is_hourly:
+                a *= _HOURS_PER_YEAR
+                b *= _HOURS_PER_YEAR
+            lo, hi = (a, b) if a <= b else (b, a)
+            if not is_hourly and not range_match.group(2) and not range_match.group(4) and hi < 1000:
+                return (None, None)
+            return (lo, hi)
+
+    single_match = _SALARY_SINGLE_PATTERN.search(text)
+    if single_match:
+        a = _to_amount(single_match.group(1), single_match.group(2))
+        if a is not None:
+            if is_hourly:
+                a *= _HOURS_PER_YEAR
+            elif not single_match.group(2) and a < 1000:
+                return (None, None)
+            return (a, None)
+
+    return (None, None)
+
+
 # Platform -> extractor function mapping
 EXTRACTORS = {
     "applitrack": _extract_applitrack,

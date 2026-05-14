@@ -18,6 +18,7 @@ celery_app = Celery(
         "app.tasks.profile_tasks",
         "app.tasks.apply_tasks",
         "app.tasks.digest_tasks",
+        "app.tasks.enrich_tasks",
     ],
 )
 
@@ -95,5 +96,10 @@ celery_app.conf.beat_schedule = {
     "close-orphaned-scrape-runs": {
         "task": "app.tasks.maintenance_tasks.close_orphaned_scrape_runs",
         "schedule": crontab(hour=4, minute=15),  # Daily 4:15 AM CT — sweeps stuck-running rows from worker crashes
+    },
+    "enrich-applitrack-pending": {
+        "task": "app.tasks.enrich_tasks.enrich_pending_jobs",
+        "schedule": crontab(minute="*/15"),
+        "kwargs": {"limit": 50, "platform": "applitrack"},
     },
 }

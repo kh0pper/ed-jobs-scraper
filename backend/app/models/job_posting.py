@@ -58,6 +58,10 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
     removal_detected_at = Column(DateTime(timezone=True))
     reactivation_count = Column(Integer, default=0, nullable=False)
 
+    # Detail-page enrichment (background task — fills salary/description)
+    enrichment_attempted_at = Column(DateTime(timezone=True))
+    enrichment_status = Column(String(32))  # success, no_data, parse_error, http_error, unsupported_platform
+
     # Relationships (import strings to avoid circular imports)
     from sqlalchemy.orm import relationship
     organization = relationship("Organization", back_populates="job_postings")

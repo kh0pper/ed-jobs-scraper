@@ -47,3 +47,8 @@ notes/
 config/
 data/pdfs/
 data/screenshots/
+
+# Claude Code working state (per-host)
+.claude/
+.serena/
+CLAUDE.md
