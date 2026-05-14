@@ -150,7 +150,6 @@ def backfill_salary_from_descriptions(limit: int = 200, platform: str | None = N
             .filter(
                 JobPosting.description.isnot(None),
                 JobPosting.salary_min.is_(None),
-                JobPosting.enrichment_status == "success",
             )
         )
         if platform:
