@@ -79,11 +79,30 @@ def generate_slugs(name: str) -> list[str]:
         slugs.append(s)
 
     # Slug 6: first-letter acronym + "isd" for multi-word names
+    # (e.g., FORT WORTH ISD -> fwisd)
     words = base.split()
     if len(words) >= 2 and ("ISD" in name):
         acronym = "".join(w[0].lower() for w in words if w) + "isd"
         if len(acronym) >= 4 and acronym not in slugs:
             slugs.append(acronym)
+
+    # Slug 7: bare-acronym variants — production slugs sometimes use just
+    # the first letter of a single-word base + "isd" (PLANO ISD -> pisd,
+    # ALIEF ISD -> aisd) or the bare acronym of a multi-word base without
+    # the "isd" suffix (FORT WORTH ISD -> fw). The original Slug-6 branch
+    # is gated on len(words)>=2 and always appends "isd", so neither variant
+    # is reachable. Verified missing-slug cases as of 2026-05-26: Plano
+    # uses applitrack.com/pisd/ (1.8 MB, 150 active jobs); Alief uses
+    # aisd.schoolspring.com.
+    if "ISD" in name:
+        if len(words) == 1 and words[0]:
+            short = words[0][0].lower() + "isd"
+            if short not in slugs:
+                slugs.append(short)
+        elif len(words) >= 2:
+            bare = "".join(w[0].lower() for w in words if w)
+            if len(bare) >= 2 and bare not in slugs:
+                slugs.append(bare)
 
     return slugs
 
@@ -92,12 +111,24 @@ def check_applitrack_slug(slug: str, client: httpx.Client) -> bool:
     """Check if an Applitrack page exists for the given slug.
 
     Uses the Output.asp endpoint which returns all jobs.
-    Returns True if the page returns 200 and contains job title tables.
+
+    Signal: status 200 AND either `JobID:` (page has current openings) OR
+    `VacanciesAreOnThisPage` (Applitrack-specific JS variable emitted on
+    every listings page regardless of whether jobs are currently posted).
+
+    The latter was added 2026-05-26 after live verification showed
+    Dallas/Frisco/Cy-Fair return Applitrack listing pages with
+    `var VacanciesAreOnThisPage = true` but no `JobID:` markers when no
+    current openings exist. The `JobID:`-only signal silently dropped
+    these real districts. `VacanciesAreOnThisPage` is Applitrack-specific
+    enough that the false-positive risk is low.
     """
     url = f"{APPLITRACK_BASE}/{slug}/onlineapp/jobpostings/Output.asp?all=1"
     try:
         resp = client.get(url, timeout=15, follow_redirects=True)
-        if resp.status_code == 200 and "JobID:" in resp.text:
+        if resp.status_code == 200 and (
+            "JobID:" in resp.text or "VacanciesAreOnThisPage" in resp.text
+        ):
             return True
     except (httpx.HTTPError, httpx.TimeoutException):
         pass

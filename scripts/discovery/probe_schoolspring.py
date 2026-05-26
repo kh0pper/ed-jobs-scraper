@@ -66,20 +66,54 @@ def generate_slugs(name: str) -> list[str]:
     if s and s not in slugs:
         slugs.append(s)
 
+    # Bare-acronym variants — production tenants sometimes use just the
+    # first letter of a single-word base + "isd" (ALIEF ISD -> aisd uses
+    # aisd.schoolspring.com, verified 2026-05-26) or the multi-word
+    # acronym + "isd" (FORT WORTH ISD -> fwisd). Without these, real
+    # tenants stay invisible to the probe.
+    words = base.split()
+    if "ISD" in name:
+        if len(words) == 1 and words[0]:
+            short = words[0][0].lower() + "isd"
+            if short not in slugs:
+                slugs.append(short)
+        elif len(words) >= 2:
+            acronym = "".join(w[0].lower() for w in words if w) + "isd"
+            if len(acronym) >= 4 and acronym not in slugs:
+                slugs.append(acronym)
+
     return slugs
 
 
 def check_schoolspring_slug(slug: str, client: httpx.Client) -> bool:
-    """Check if a SchoolSpring subdomain exists for the given slug."""
-    url = f"https://{slug}.schoolspring.com/"
+    """Check if a SchoolSpring tenant has scrapeable jobs at this slug.
+
+    Previously probed the HTML root and matched 'job' or 'position' anywhere
+    in the body — but SchoolSpring is a SPA that serves an identical shell
+    for every subdomain, so that signal matched the global landing page for
+    every guess. Result: 1,117 sources created, 936 of which produced zero
+    jobs and were mass-deactivated on 2026-05-01.
+
+    Use the same JSON API the production scraper uses
+    (api.schoolspring.com/api/Jobs/GetPagedJobsWithSearch). A non-empty
+    jobsList confirms both that the tenant exists AND that scraping it
+    will yield real rows. Empty jobsList here equates to "no value" for
+    our pipeline — better to skip than to create another zombie source.
+    """
+    api_url = (
+        f"https://api.schoolspring.com/api/Jobs/GetPagedJobsWithSearch"
+        f"?domainName={slug}.schoolspring.com&page=1&size=2"
+    )
     try:
-        resp = client.get(url, timeout=15, follow_redirects=True)
-        # SchoolSpring returns 200 for valid districts with job content
-        if resp.status_code == 200 and ("job" in resp.text.lower() or "position" in resp.text.lower()):
-            return True
-    except (httpx.HTTPError, httpx.TimeoutException):
-        pass
-    return False
+        resp = client.get(api_url, timeout=15)
+        if resp.status_code != 200:
+            return False
+        payload = resp.json()
+        jobs_list = ((payload or {}).get("value") or {}).get("jobsList") or []
+        return len(jobs_list) > 0
+    except (httpx.HTTPError, httpx.TimeoutException, ValueError):
+        # ValueError covers JSONDecodeError from response.json()
+        return False
 
 
 def probe(dry_run: bool = False, resume: bool = False):
