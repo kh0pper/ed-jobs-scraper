@@ -69,10 +69,12 @@ def generate_slugs(name: str) -> list[str]:
 
     # Bare-acronym variants — production tenants sometimes use just the
     # first letter of a single-word base + "isd" (ALIEF ISD -> aisd uses
-    # aisd.schoolspring.com, verified 2026-05-26) or the multi-word
-    # acronym + "isd" (FORT WORTH ISD -> fwisd). Without these, real
-    # tenants stay invisible to the probe.
-    words = base.split()
+    # aisd.schoolspring.com, verified 2026-05-26), the multi-word
+    # acronym + "isd" (FORT WORTH ISD -> fwisd), or hyphen-aware
+    # acronyms (CYPRESS-FAIRBANKS ISD -> cfisd uses cfisd.schoolspring.com,
+    # verified 2026-05-26). Without these, real tenants stay invisible
+    # to the probe.
+    words = re.split(r"[\s-]+", base)
     if "ISD" in name:
         if len(words) == 1 and words[0]:
             short = words[0][0].lower() + "isd"

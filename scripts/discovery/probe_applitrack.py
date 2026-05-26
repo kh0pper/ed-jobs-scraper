@@ -80,8 +80,10 @@ def generate_slugs(name: str) -> list[str]:
         slugs.append(s)
 
     # Slug 6: first-letter acronym + "isd" for multi-word names
-    # (e.g., FORT WORTH ISD -> fwisd)
-    words = base.split()
+    # (e.g., FORT WORTH ISD -> fwisd, CYPRESS-FAIRBANKS ISD -> cfisd).
+    # Split on whitespace AND hyphens so hyphenated names like
+    # CYPRESS-FAIRBANKS yield two words, not one.
+    words = re.split(r"[\s-]+", base)
     if len(words) >= 2 and ("ISD" in name):
         acronym = "".join(w[0].lower() for w in words if w) + "isd"
         if len(acronym) >= 4 and acronym not in slugs:
@@ -91,10 +93,10 @@ def generate_slugs(name: str) -> list[str]:
     # the first letter of a single-word base + "isd" (PLANO ISD -> pisd,
     # ALIEF ISD -> aisd) or the bare acronym of a multi-word base without
     # the "isd" suffix (FORT WORTH ISD -> fw). The original Slug-6 branch
-    # is gated on len(words)>=2 and always appends "isd", so neither variant
-    # is reachable. Verified missing-slug cases as of 2026-05-26: Plano
-    # uses applitrack.com/pisd/ (1.8 MB, 150 active jobs); Alief uses
-    # aisd.schoolspring.com.
+    # is gated on len(words)>=2 and always appended "isd", so neither
+    # variant was reachable. Verified missing-slug cases as of 2026-05-26:
+    # Plano uses applitrack.com/pisd/ (1.8 MB, 150 active jobs); Alief
+    # uses aisd.schoolspring.com.
     if "ISD" in name:
         if len(words) == 1 and words[0]:
             short = words[0][0].lower() + "isd"
