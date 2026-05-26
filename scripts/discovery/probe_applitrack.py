@@ -24,6 +24,7 @@ from app.models.organization import Organization
 from app.models.scrape_source import ScrapeSource
 from app.models.job_posting import JobPosting  # noqa: F401
 from app.models.scrape_run import ScrapeRun  # noqa: F401
+from scripts.discovery._disambiguation import distinctive_token
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -107,32 +108,43 @@ def generate_slugs(name: str) -> list[str]:
     return slugs
 
 
-def check_applitrack_slug(slug: str, client: httpx.Client) -> bool:
-    """Check if an Applitrack page exists for the given slug.
+def check_applitrack_slug(slug: str, org_name: str, client: httpx.Client) -> bool:
+    """Check if an Applitrack tenant exists at this slug AND plausibly
+    belongs to the org being probed.
 
-    Uses the Output.asp endpoint which returns all jobs.
+    Structural signal: status 200 AND either `JobID:` (page has current
+    openings) OR `VacanciesAreOnThisPage` (Applitrack-specific JS
+    variable emitted on every listings page). The latter was added
+    2026-05-26 after live verification showed Dallas/Frisco/Cy-Fair
+    return Applitrack listing pages with `var VacanciesAreOnThisPage =
+    true` but no `JobID:` markers when no current openings exist.
 
-    Signal: status 200 AND either `JobID:` (page has current openings) OR
-    `VacanciesAreOnThisPage` (Applitrack-specific JS variable emitted on
-    every listings page regardless of whether jobs are currently posted).
-
-    The latter was added 2026-05-26 after live verification showed
-    Dallas/Frisco/Cy-Fair return Applitrack listing pages with
-    `var VacanciesAreOnThisPage = true` but no `JobID:` markers when no
-    current openings exist. The `JobID:`-only signal silently dropped
-    these real districts. `VacanciesAreOnThisPage` is Applitrack-specific
-    enough that the false-positive risk is low.
+    Ownership signal: each applitrack URL slug maps to exactly one
+    tenant, but multiple orgs can generate the same candidate slug —
+    most painfully the bare-acronym fallbacks (`pisd`, `aisd`, ...) that
+    are valid for any P-, A-, etc. district. We require EITHER the slug
+    to embed the org's distinctive name token (strong slug — e.g.,
+    'humbleisd' contains 'humble'), OR the body content to surface that
+    token in a non-URL context (URL slugs naturally don't contain the
+    token in the weak-slug branch, so URL strings can't false-positive).
     """
     url = f"{APPLITRACK_BASE}/{slug}/onlineapp/jobpostings/Output.asp?all=1"
     try:
         resp = client.get(url, timeout=15, follow_redirects=True)
-        if resp.status_code == 200 and (
-            "JobID:" in resp.text or "VacanciesAreOnThisPage" in resp.text
-        ):
+        if resp.status_code != 200:
+            return False
+        body = resp.text
+        if "JobID:" not in body and "VacanciesAreOnThisPage" not in body:
+            return False
+
+        token = distinctive_token(org_name)
+        if not token:
+            return False
+        if token in slug.lower():
             return True
+        return token in body.lower()
     except (httpx.HTTPError, httpx.TimeoutException):
-        pass
-    return False
+        return False
 
 
 def probe(dry_run: bool = False, resume: bool = False):
@@ -170,7 +182,7 @@ def probe(dry_run: bool = False, resume: bool = False):
             for slug in slugs:
                 time.sleep(RATE_LIMIT_SECONDS)
 
-                if check_applitrack_slug(slug, client):
+                if check_applitrack_slug(slug, org.name, client):
                     url = f"{APPLITRACK_BASE}/{slug}/onlineapp/jobpostings/Output.asp?all=1"
                     logger.info(f"HIT: {org.name} ({org.tea_id}) -> {slug}")
 

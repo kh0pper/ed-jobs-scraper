@@ -21,6 +21,7 @@ from app.models.organization import Organization
 from app.models.scrape_source import ScrapeSource
 from app.models.job_posting import JobPosting  # noqa: F401
 from app.models.scrape_run import ScrapeRun  # noqa: F401
+from scripts.discovery._disambiguation import distinctive_token
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -85,8 +86,9 @@ def generate_slugs(name: str) -> list[str]:
     return slugs
 
 
-def check_schoolspring_slug(slug: str, client: httpx.Client) -> bool:
-    """Check if a SchoolSpring tenant has scrapeable jobs at this slug.
+def check_schoolspring_slug(slug: str, org_name: str, client: httpx.Client) -> bool:
+    """Check if a SchoolSpring tenant has scrapeable jobs that look like
+    they belong to *this* org.
 
     Previously probed the HTML root and matched 'job' or 'position' anywhere
     in the body — but SchoolSpring is a SPA that serves an identical shell
@@ -94,15 +96,24 @@ def check_schoolspring_slug(slug: str, client: httpx.Client) -> bool:
     every guess. Result: 1,117 sources created, 936 of which produced zero
     jobs and were mass-deactivated on 2026-05-01.
 
-    Use the same JSON API the production scraper uses
-    (api.schoolspring.com/api/Jobs/GetPagedJobsWithSearch). A non-empty
-    jobsList confirms both that the tenant exists AND that scraping it
-    will yield real rows. Empty jobsList here equates to "no value" for
-    our pipeline — better to skip than to create another zombie source.
+    The current implementation hits the production JSON API
+    (api.schoolspring.com/api/Jobs/GetPagedJobsWithSearch) and then
+    requires that ownership of the returned tenant looks plausible:
+
+    1. jobsList must be non-empty (rules out unregistered domains).
+    2. EITHER the slug embeds the org's distinctive name token
+       (e.g., 'humbleisd' contains 'humble' — a long-form match), OR at
+       least one job in the response mentions that token in its employer,
+       title, or location field.
+
+    The second clause is what blocks the bare-acronym collision problem
+    (29 orgs all claiming 'aisd' because their slug-generators emit the
+    same fallback). Only the actual owner's tenant will surface the org's
+    name in employer / title / location text.
     """
     api_url = (
         f"https://api.schoolspring.com/api/Jobs/GetPagedJobsWithSearch"
-        f"?domainName={slug}.schoolspring.com&page=1&size=2"
+        f"?domainName={slug}.schoolspring.com&page=1&size=50"
     )
     try:
         resp = client.get(api_url, timeout=15)
@@ -110,7 +121,32 @@ def check_schoolspring_slug(slug: str, client: httpx.Client) -> bool:
             return False
         payload = resp.json()
         jobs_list = ((payload or {}).get("value") or {}).get("jobsList") or []
-        return len(jobs_list) > 0
+        if not jobs_list:
+            return False
+
+        token = distinctive_token(org_name)
+        if not token:
+            # No verifiable token (very short / generic name) — refuse
+            # to claim the tenant.
+            return False
+        if token in slug.lower():
+            # Strong-slug shortcut: the slug itself encodes the org name
+            # (e.g., 'humbleisd' for HUMBLE ISD). Accept without
+            # content verification.
+            return True
+        # Weak-slug branch: bare-acronym or otherwise non-encoded slug.
+        # Require the API to surface the token in any narrative field.
+        for j in jobs_list:
+            blob = (
+                (j.get("employer") or "")
+                + " "
+                + (j.get("title") or "")
+                + " "
+                + (j.get("location") or "")
+            ).lower()
+            if token in blob:
+                return True
+        return False
     except (httpx.HTTPError, httpx.TimeoutException, ValueError):
         # ValueError covers JSONDecodeError from response.json()
         return False
@@ -150,7 +186,7 @@ def probe(dry_run: bool = False, resume: bool = False):
             for slug in slugs:
                 time.sleep(RATE_LIMIT_SECONDS)
 
-                if check_schoolspring_slug(slug, client):
+                if check_schoolspring_slug(slug, org.name, client):
                     url = f"https://{slug}.schoolspring.com/"
                     logger.info(f"HIT: {org.name} ({org.tea_id}) -> {slug}")
 
