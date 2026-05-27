@@ -417,7 +417,7 @@ _SALARY_SINGLE_PATTERN = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)\s*([kK])?")
 # explicit "Annual Salary: $25,190" the district will actually pay.
 _EXPLICIT_ANNUAL_PATTERN = re.compile(
     r"\b(?:Min(?:imum)?\s+Annual\s+Salary|Max(?:imum)?\s+Annual\s+Salary|"
-    r"Annual\s+Salary|Starting\s+Salary|Salary|Compensation|Pay\s+Range)\b\s*:",
+    r"Annual\s+Salary|Starting\s+Salary|Salary\s+Range|Salary|Compensation|Pay\s+Range)\b\s*:",
     re.IGNORECASE,
 )
 _PAY_GRADE_PATTERN = re.compile(r"\bPay\s+Grade\b\s*:", re.IGNORECASE)
@@ -470,6 +470,25 @@ def extract_salary(
             smin, smax = parse_salary_range(window, hourly_hint=hourly_hint)
             if smin is not None or smax is not None:
                 return (smin, smax, window.strip()[:255])
+
+    # Tier 4 — naked range: no label found, but the text contains a
+    # `$X - $Y` range pattern. Only accept ranges (not single values)
+    # to avoid grabbing stray dollar figures from unrelated contexts
+    # (budgets, grant amounts, signing bonuses). The stipend-left-context
+    # guard and hourly autodetect in parse_salary_range still apply.
+    # Use a wider window (±40 chars) so hourly keywords like "per hour"
+    # sitting just after the range are visible to the autodetect.
+    for m in _SALARY_RANGE_PATTERN.finditer(text):
+        left = text[max(0, m.start() - 40): m.start()].lower()
+        if _STIPEND_LEFT_CONTEXT.search(left):
+            continue
+        window_start = max(0, m.start() - 20)
+        window_end = min(len(text), m.end() + 40)
+        window = text[window_start:window_end]
+        smin, smax = parse_salary_range(window)
+        if smin is not None and smax is not None:
+            return (smin, smax, window.strip()[:255])
+
     return (None, None, None)
 
 
