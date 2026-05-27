@@ -7,6 +7,7 @@ and writes back. Each row gets one attempt per 7 days regardless of
 outcome — re-attempts only after that cooldown.
 """
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 
 from app.tasks.celery_app import celery_app
@@ -26,6 +27,18 @@ logger = logging.getLogger(__name__)
 ENRICHMENT_RETRY_DAYS = 7
 DEFAULT_BATCH_LIMIT = 50
 SUPPORTED_PLATFORMS = ("applitrack", "smartrecruiters")
+
+# Postgres text columns reject NUL bytes; some scraped HTML carries them
+# (and a few other low-control chars) in the wild. Stripping at write-time
+# prevents a single bad row from poisoning the whole 50-row batch via
+# PendingRollbackError during db.commit().
+_ILLEGAL_CTRL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+
+def _clean_text(s: str | None) -> str | None:
+    if s is None:
+        return None
+    return _ILLEGAL_CTRL_RE.sub("", s)
 
 
 @celery_app.task(name="app.tasks.enrich_tasks.enrich_pending_jobs")
@@ -109,11 +122,11 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
 
             try:
                 if description and not row.description:
-                    row.description = description
+                    row.description = _clean_text(description)
                 if requirements and not row.requirements:
-                    row.requirements = requirements
+                    row.requirements = _clean_text(requirements)
                 if final_text and not row.salary_text:
-                    row.salary_text = final_text[:255]
+                    row.salary_text = _clean_text(final_text)[:255]
                 if final_smin is not None and row.salary_min is None:
                     row.salary_min = final_smin
                 if final_smax is not None and row.salary_max is None:
