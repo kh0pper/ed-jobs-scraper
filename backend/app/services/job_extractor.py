@@ -227,9 +227,34 @@ def _extract_applitrack(job) -> dict:
 
 
 def _extract_eightfold(job) -> dict:
-    """Eightfold: description already in DB from scraper."""
+    """Eightfold: fetch description from the detail API.
+
+    The listings endpoint (/api/apply/v2/jobs) returns `job_description`
+    as empty string; only the per-job detail endpoint
+    (/api/apply/v2/jobs/<id>) populates it with HTML. Extract the job ID
+    from the canonical URL and fetch the detail.
+    """
+    import re as _re
+    from urllib.parse import urlparse
+
+    url = job.application_url
+    parsed = urlparse(url)
+    m = _re.search(r"/job/(\d+)", parsed.path)
+    if not m:
+        return {"description": job.description, "requirements": job.requirements,
+                "qualifications": None, "salary_info": job.salary_text}
+
+    api_url = f"{parsed.scheme}://{parsed.netloc}/api/apply/v2/jobs/{m.group(1)}"
+    client = _get_http_client()
+    resp = client.get(api_url)
+    resp.raise_for_status()
+
+    data = resp.json()
+    raw_html = data.get("job_description", "")
+    description = BeautifulSoup(raw_html, "lxml").get_text(separator="\n", strip=True) if raw_html else ""
+
     return {
-        "description": job.description,
+        "description": description or None,
         "requirements": job.requirements,
         "qualifications": None,
         "salary_info": job.salary_text,
