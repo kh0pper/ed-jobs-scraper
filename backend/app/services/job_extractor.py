@@ -426,6 +426,14 @@ _HOURLY_LABEL_PATTERN = re.compile(
     r"Hourly\s+Rate|Pay\s+Rate|Pay)\b\s*:",
     re.IGNORECASE,
 )
+# Sentence-form salary disclosure: "the salary for this position is $X"
+# or "the daily rate is $X". Common in SmartRecruiters / KIPP job ads.
+# Requires "is" as the delimiter instead of ":".
+_SENTENCE_SALARY_PATTERN = re.compile(
+    r"\b(?:salary\s+range|salary|starting\s+salary|daily\s+rate|rate)\s+"
+    r"(?:for\s+this\s+position\s+)?is\b",
+    re.IGNORECASE,
+)
 
 
 def extract_salary(
@@ -457,6 +465,10 @@ def extract_salary(
         # floor — substitute-teacher day rates won't masquerade as
         # six-figure salaries.
         (_HOURLY_LABEL_PATTERN, None),
+        # Sentence-form disclosures: "the salary for this position is $X".
+        # Common in SmartRecruiters / KIPP. Hourly autodetect via "daily
+        # rate" keyword in the snippet.
+        (_SENTENCE_SALARY_PATTERN, None),
     )
     for pattern, hourly_hint in tiers:
         for m in pattern.finditer(text):
