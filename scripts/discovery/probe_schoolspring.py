@@ -210,6 +210,18 @@ def probe(dry_run: bool = False, resume: bool = False):
                             db.add(source)
                             org.platform_status = "mapped"
                             db.commit()
+                        elif not existing.is_active:
+                            # Reactivate a previously-deactivated source we
+                            # have now rediscovered. Update slug/base_url
+                            # in case the working slug differs from the
+                            # historic one.
+                            existing.is_active = True
+                            existing.slug = slug
+                            existing.base_url = url
+                            existing.consecutive_failures = 0
+                            org.platform_status = "mapped"
+                            db.commit()
+                            logger.info(f"  REACTIVATED: {org.name}")
 
                     hits += 1
                     found = True
