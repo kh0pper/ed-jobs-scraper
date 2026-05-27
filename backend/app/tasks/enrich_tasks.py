@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 ENRICHMENT_RETRY_DAYS = 7
 DEFAULT_BATCH_LIMIT = 50
-SUPPORTED_PLATFORMS = ("applitrack", "smartrecruiters")
+SUPPORTED_PLATFORMS = ("applitrack", "smartrecruiters", "eightfold")
 
 # Postgres text columns reject NUL bytes; some scraped HTML carries them
 # (and a few other low-control chars) in the wild. Stripping at write-time
@@ -68,7 +68,7 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
             db.query(JobPosting)
             .filter(
                 JobPosting.platform == platform,
-                JobPosting.description.is_(None),
+                (JobPosting.description.is_(None) | (JobPosting.description == "")),
                 JobPosting.is_active.is_(True),
                 (JobPosting.enrichment_attempted_at.is_(None))
                 | (JobPosting.enrichment_attempted_at < cutoff),

@@ -107,4 +107,9 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="7-59/15"),  # offset from applitrack to avoid worker contention
         "kwargs": {"limit": 30, "platform": "smartrecruiters"},
     },
+    "enrich-eightfold-pending": {
+        "task": "app.tasks.enrich_tasks.enrich_pending_jobs",
+        "schedule": crontab(minute="3-59/15"),  # offset from applitrack (0) and SR (7)
+        "kwargs": {"limit": 30, "platform": "eightfold"},
+    },
 }
