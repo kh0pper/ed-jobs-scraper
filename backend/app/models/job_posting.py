@@ -1,6 +1,6 @@
 """Job posting model — core job table."""
 
-from sqlalchemy import Column, String, Float, Boolean, DateTime, Text, ForeignKey, Index, Integer
+from sqlalchemy import Column, String, Float, Boolean, DateTime, Text, ForeignKey, Index, Integer, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -57,6 +57,9 @@ class JobPosting(UUIDMixin, TimestampMixin, Base):
     last_seen_run_id = Column(UUID(as_uuid=True), ForeignKey("scrape_runs.id"), index=True)
     removal_detected_at = Column(DateTime(timezone=True))
     reactivation_count = Column(Integer, default=0, nullable=False)
+
+    # Attachments (salary schedules, PDFs discovered during enrichment)
+    attachments = Column(JSONB, server_default=text("'[]'"), nullable=False)
 
     # Detail-page enrichment (background task — fills salary/description)
     enrichment_attempted_at = Column(DateTime(timezone=True))

@@ -10,3 +10,6 @@ from app.scrapers.ttcportals import TtcPortalsScraper  # noqa: F401
 from app.scrapers.munis import MunisScraper  # noqa: F401
 from app.scrapers.workday import WorkdayScraper  # noqa: F401
 from app.scrapers.simple_career import SimpleCareerScraper  # noqa: F401
+from app.scrapers.skyward import SkywardScraper  # noqa: F401
+from app.scrapers.frontline_erp import FrontlineErpScraper  # noqa: F401
+from app.scrapers.skyward_vue import SkywardVueScraper  # noqa: F401

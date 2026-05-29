@@ -37,6 +37,29 @@ def _get_http_client() -> httpx.Client:
     return _http_client
 
 
+def _scan_pdf_links(html: str, base_url: str = "") -> list[dict]:
+    """Scan HTML for PDF links and salary-schedule references."""
+    from urllib.parse import urljoin
+    soup = BeautifulSoup(html, "lxml")
+    attachments = []
+    seen = set()
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        text = a.get_text(strip=True).lower()
+        is_pdf = href.lower().endswith(".pdf") or "BrowseFile" in href
+        is_schedule = any(kw in text for kw in ("salary schedule", "compensation schedule", "pay schedule", "salary scale"))
+        if is_pdf or is_schedule:
+            full_url = urljoin(base_url, href) if base_url else href
+            if full_url not in seen:
+                seen.add(full_url)
+                attachments.append({
+                    "url": full_url,
+                    "type": "salary_schedule" if is_schedule else "pdf",
+                    "filename": a.get_text(strip=True)[:100] or href.split("/")[-1][:100],
+                })
+    return attachments
+
+
 def extract_job_details(job_posting) -> dict:
     """Extract full job details based on platform.
 
@@ -44,31 +67,32 @@ def extract_job_details(job_posting) -> dict:
         job_posting: JobPosting ORM object with platform, application_url, description, etc.
 
     Returns:
-        dict with keys: description, requirements, qualifications, salary_info
-        Any key may be None if not available.
+        dict with keys: description, requirements, qualifications, salary_info, attachments
+        Any key may be None if not available. attachments is always a list.
     """
-    # If description already cached, return it
     if job_posting.description:
         return {
             "description": job_posting.description,
             "requirements": job_posting.requirements,
             "qualifications": None,
             "salary_info": job_posting.salary_text,
+            "attachments": [],
         }
 
     platform = job_posting.platform
     extractor = EXTRACTORS.get(platform)
     if not extractor:
         logger.warning("No extractor for platform: %s", platform)
-        return {"description": None, "requirements": None, "qualifications": None, "salary_info": None}
+        return {"description": None, "requirements": None, "qualifications": None, "salary_info": None, "attachments": []}
 
     try:
         result = extractor(job_posting)
+        result.setdefault("attachments", [])
         logger.info("Extracted details for %s job: %s", platform, job_posting.title[:60])
         return result
     except Exception as e:
         logger.error("Failed to extract details for %s (%s): %s", platform, job_posting.application_url, e)
-        return {"description": None, "requirements": None, "qualifications": None, "salary_info": None}
+        return {"description": None, "requirements": None, "qualifications": None, "salary_info": None, "attachments": []}
 
 
 # --- Applitrack helpers ---
@@ -173,18 +197,25 @@ def _extract_applitrack(job) -> dict:
             if len(text) > 20:
                 inline_parts.append(text)
 
-    # 3. Extract attachment text
+    # 3. Extract attachment text and collect attachment URLs
     attachment_text = None
+    attachment_urls = []
     attachments_div = soup.find("div", class_="AppliTrackJobPostingAttachments")
     if attachments_div:
         for link in attachments_div.find_all("a", href=True):
             href = link["href"]
             if "BrowseFile" in href:
-                logger.info("Downloading Applitrack attachment: %s", link.get_text(strip=True))
-                text = _applitrack_extract_pdf_text(href)
-                if text:
-                    attachment_text = text
-                    break  # Usually just one main attachment
+                link_text = link.get_text(strip=True)
+                attachment_urls.append({
+                    "url": href,
+                    "type": "salary_schedule" if any(kw in link_text.lower() for kw in ("salary", "compensation", "pay scale")) else "pdf",
+                    "filename": link_text[:100] or href.split("/")[-1][:100],
+                })
+                if attachment_text is None:
+                    logger.info("Downloading Applitrack attachment: %s", link_text)
+                    text = _applitrack_extract_pdf_text(href)
+                    if text:
+                        attachment_text = text
 
     # 4. Extract salary info from structured fields or inline content
     salary_info = None
@@ -223,6 +254,7 @@ def _extract_applitrack(job) -> dict:
         "requirements": None,
         "qualifications": None,
         "salary_info": salary_info,
+        "attachments": attachment_urls,
     }
 
 

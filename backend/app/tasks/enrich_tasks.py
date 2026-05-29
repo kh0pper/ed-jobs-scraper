@@ -26,7 +26,14 @@ logger = logging.getLogger(__name__)
 
 ENRICHMENT_RETRY_DAYS = 7
 DEFAULT_BATCH_LIMIT = 50
-SUPPORTED_PLATFORMS = ("applitrack", "smartrecruiters", "eightfold")
+SUPPORTED_PLATFORMS = (
+    "applitrack", "smartrecruiters", "eightfold",
+    # httpx/BS4-based extractors — fast, safe to run in the enrich loop.
+    # (Browser-based taleo/jobvite/ttcportals are excluded: they launch
+    # Patchright per job, too slow for per-row enrichment — enrich those
+    # at scrape time instead.)
+    "munis", "workday", "simple_career",
+)
 
 # Postgres text columns reject NUL bytes; some scraped HTML carries them
 # (and a few other low-control chars) in the wild. Stripping at write-time
@@ -95,6 +102,7 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
             description = result.get("description")
             requirements = result.get("requirements")
             salary_text = result.get("salary_info")
+            attachments = result.get("attachments", [])
             # Structured salary_info from the platform extractor; if the
             # platform returned a value, parse it with autodetect.
             smin_struct, smax_struct = parse_salary_range(salary_text) if salary_text else (None, None)
@@ -131,6 +139,8 @@ def enrich_pending_jobs(limit: int = DEFAULT_BATCH_LIMIT, platform: str = "appli
                     row.salary_min = final_smin
                 if final_smax is not None and row.salary_max is None:
                     row.salary_max = final_smax
+                if attachments and (not row.attachments or row.attachments == []):
+                    row.attachments = attachments
                 row.enrichment_status = "success"
                 row.enrichment_attempted_at = now
                 counts["success"] += 1

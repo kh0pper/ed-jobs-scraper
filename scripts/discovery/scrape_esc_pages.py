@@ -66,6 +66,10 @@ PLATFORM_PATTERNS = [
     ("peopleadmin", re.compile(r"peopleadmin\.com", re.I)),
     ("applicantpro", re.compile(r"applicantpro\.com", re.I)),
     ("teachermatch", re.compile(r"teachermatch\.org", re.I)),
+    ("schoolspring", re.compile(r"([^.]+)\.tedk12\.com", re.I)),
+    ("skyward_vue", re.compile(r"ApplicantTracking/JobBoard/ViewJobPostings", re.I)),
+    ("skyward", re.compile(r"rappljoblst\d*\.w|rapplmnu\d*\.r", re.I)),
+    ("frontline_erp", re.compile(r"\.erp\.frontlineeducation\.com|is-teams\.", re.I)),
 ]
 
 

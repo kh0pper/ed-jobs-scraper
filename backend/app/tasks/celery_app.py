@@ -112,4 +112,28 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="3-59/15"),  # offset from applitrack (0) and SR (7)
         "kwargs": {"limit": 30, "platform": "eightfold"},
     },
+    "enrich-munis-pending": {
+        "task": "app.tasks.enrich_tasks.enrich_pending_jobs",
+        "schedule": crontab(minute="11-59/15"),  # offset from applitrack/SR/eightfold
+        "kwargs": {"limit": 30, "platform": "munis"},
+    },
+    "enrich-workday-pending": {
+        "task": "app.tasks.enrich_tasks.enrich_pending_jobs",
+        "schedule": crontab(minute="13-59/15"),
+        "kwargs": {"limit": 30, "platform": "workday"},
+    },
+    "enrich-simple-career-pending": {
+        "task": "app.tasks.enrich_tasks.enrich_pending_jobs",
+        "schedule": crontab(minute="9-59/15"),
+        "kwargs": {"limit": 30, "platform": "simple_career"},
+    },
+    "backfill-schoolspring-salary": {
+        # SchoolSpring captures descriptions inline at scrape time but not
+        # structured salary. This re-parses salary from existing descriptions
+        # (no HTTP, idempotent, gated on salary_min IS NULL) so newly-scraped
+        # rows get salary without a detail-page fetch.
+        "task": "app.tasks.enrich_tasks.backfill_salary_from_descriptions",
+        "schedule": crontab(minute=10, hour="*/6"),
+        "kwargs": {"limit": 200, "platform": "schoolspring"},
+    },
 }

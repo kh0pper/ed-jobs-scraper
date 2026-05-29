@@ -51,7 +51,29 @@ class MunisScraper(BaseScraper):
         soup = BeautifulSoup(resp.text, "lxml")
         jobs = []
 
-        # Munis uses a table or div-based listing
+        # Variant A — ess.<domain> Munis (e.g. Northside ISD): job postings are
+        # individual <a href=".../JobDetail.aspx?req=N"> links, not table rows.
+        from urllib.parse import urljoin
+        detail_links = soup.find_all("a", href=lambda h: h and "JobDetail.aspx" in h)
+        if detail_links:
+            seen_hrefs = set()
+            for link in detail_links:
+                href = link.get("href")
+                title = link.get_text(strip=True)
+                # Skip the generic "Job Posting" sibling links and dupes
+                if not title or title == "Job Posting" or href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+                jobs.append({
+                    "title": title,
+                    "location": None,
+                    "date_str": None,
+                    "url": urljoin(url, href),
+                })
+            logger.info(f"Parsed {len(jobs)} listings from Munis (JobDetail variant)")
+            return jobs
+
+        # Variant B — <slug>.munisselfservice.com: table or div-based listing
         rows = soup.select("table tr, .opportunity-row, .job-listing")
 
         for row in rows:
