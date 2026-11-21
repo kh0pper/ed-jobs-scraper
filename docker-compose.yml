@@ -123,6 +123,9 @@ services:
   nominatim:
     image: mediagis/nominatim:4.4
     container_name: edjobs_nominatim
+    # NOMINATIM_PASSWORD lives in the untracked, gitignored .env.nominatim (mode 600),
+    # read by this service only (the shared .env goes to the app services).
+    env_file: .env.nominatim
     # Shared with the crow R4 instance's GIS tools (read-only geocoding API).
     # 8088 is claimed by trilium in crow's port-allocation.md, hence 8089.
     # Loopback only (2026-11-21): the scraper stack runs on crow again and
@@ -133,7 +136,6 @@ services:
     environment:
       PBF_URL: https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
       REPLICATION_URL: https://download.geofabrik.de/north-america/us/texas-updates/
-      NOMINATIM_PASSWORD: nominatim_secure_2026
       IMPORT_STYLE: full
     volumes:
       - edjobs_nominatim_data:/var/lib/postgresql/14/main

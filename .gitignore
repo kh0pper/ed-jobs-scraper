@@ -52,3 +52,6 @@ data/screenshots/
 .claude/
 .serena/
 CLAUDE.md
+
+# Nominatim DB password (rotated 2026-11-21); read only by the nominatim service
+.env.nominatim
