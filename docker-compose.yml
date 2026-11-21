@@ -125,11 +125,11 @@ services:
     container_name: edjobs_nominatim
     # Shared with the crow R4 instance's GIS tools (read-only geocoding API).
     # 8088 is claimed by trilium in crow's port-allocation.md, hence 8089.
-    # Tailnet binding added 2026-07-26: the scraper stack now runs on grackle
-    # and geocodes against this instance (ufw-scoped to grackle's IP).
+    # Loopback only (2026-11-21): the scraper stack runs on crow again and
+    # geocodes via nominatim:8080 on the compose network; the 2026-07-26
+    # tailnet binding for grackle's stack is gone.
     ports:
       - "127.0.0.1:8089:8080"
-      - "100.118.41.122:8089:8080"
     environment:
       PBF_URL: https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
       REPLICATION_URL: https://download.geofabrik.de/north-america/us/texas-updates/
