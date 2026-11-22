@@ -121,7 +121,7 @@ services:
       - edjobs_postgres_data:/var/lib/postgresql/data
 
   nominatim:
-    image: mediagis/nominatim:4.4
+    image: mediagis/nominatim:5.3.3
     container_name: edjobs_nominatim
     # NOMINATIM_PASSWORD lives in the untracked, gitignored .env.nominatim (mode 600),
     # read by this service only (the shared .env goes to the app services).
@@ -134,11 +134,13 @@ services:
     ports:
       - "127.0.0.1:8089:8080"
     environment:
-      PBF_URL: https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
-      REPLICATION_URL: https://download.geofabrik.de/north-america/us/texas-updates/
+      PBF_URL: https://download.geofabrik.de/north-america/us/texas/texas-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/north-america/us/texas/updates/
       IMPORT_STYLE: full
     volumes:
-      - edjobs_nominatim_data:/var/lib/postgresql/14/main
+      # 5.3.3 runs PostgreSQL 16 on its own volume, imported fresh 2026-11-22; the
+      # 4.4 volume (edjobs_nominatim_data) is kept for rollback.
+      - edjobs_nominatim5_data:/var/lib/postgresql/16/main
     shm_size: 1g
     mem_limit: 4g
     restart: unless-stopped
@@ -153,3 +155,5 @@ volumes:
   edjobs_redis_data:
   edjobs_postgres_data:
   edjobs_nominatim_data:
+  edjobs_nominatim5_data:
+    external: true
